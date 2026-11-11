@@ -1,0 +1,24 @@
+COASTLINE DATA IN program\coastlines
+====================================
+
+world_coast.land
+----------------
+GSHHG - A Global Self-consistent, Hierarchical, High-resolution Geography Database, version 2.3.7
+by Paul Wessel (University of Hawaii) and Walter H. F. Smith (NOAA).
+https://www.soest.hawaii.edu/pwessel/gshhg/
+Used: the full-resolution shoreline polygons, level 1 (land) and level 5 (Antarctic ice front),
+packed into AT5 Chart Maker's compact .land format (coordinates rounded to 1e-7 degree).
+GSHHG is distributed under the GNU Lesser General Public License version 3 or later (see
+"GSHHG LICENSE.TXT", "lgpl-3.0.txt" and "gpl-3.0.txt" in this folder).
+
+australia_coast.land
+--------------------
+GEODATA COAST 100K 2004 - national coastline and island polygons at mean high water, 1:100 000.
+Copyright Commonwealth of Australia (Geoscience Australia) 2004.
+Source: https://pid.geoscience.gov.au/dataset/ga/61395 (61395_shp.zip, layer australia/cstauscd_r)
+Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0), see "cc-by-4.0.txt":
+https://creativecommons.org/licenses/by/4.0/
+Changes made: polygons coded "sea" were removed and the rest packed into the compact .land format
+(coordinates rounded to 1e-7 degree). The coastline is from 2004 mapping.
+
+Neither data set is for navigation.

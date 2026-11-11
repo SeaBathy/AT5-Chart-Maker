@@ -1,0 +1,112 @@
+AT5 CHART MAKER
+===============
+Makes your own charts for Simrad, Lowrance and B&G chartplotters (the same .at5 chart files that
+Navico's Insight Map Creator makes). Free, no installing, works offline.
+
+  * Depth charts from contour lines (1 m, 5 m ...) - coloured like Navionics: tan land, green drying
+    strip, blue getting lighter with depth, white deep water. Works with or without depth areas.
+  * Satellite photos or coloured bathymetry pictures as the plotter's imagery / shaded-relief layer.
+
+NOT FOR NAVIGATION. These are home-made charts. Always carry official charts.
+
+
+WHAT YOU NEED
+-------------
+  * A Windows 10 or 11 PC (64-bit).
+  * Your map file (see "What files work" below).
+  * An SD / microSD card, 32 GB or smaller, formatted FAT32.
+
+
+FIRST TIME: WINDOWS MAY WARN YOU
+--------------------------------
+This program isn't signed by a big company, so Windows may show "Windows protected your PC".
+Click "More info" and then "Run anyway". It only has to be done once.
+
+
+HOW TO MAKE A CHART
+-------------------
+  1. Keep this whole folder together (unzip it first if it came as a .zip).
+  2. Double-click "AT5 Chart Maker.exe".
+  3. Drag your map file onto the window (or press Browse... next to "Map file").
+     "Save to" and "Chart name" fill in by themselves.
+  4. Press Convert and wait for "Done". A small area takes seconds; a whole country 10-15 minutes.
+     The Convert button turns into Stop while it works, if you want to cancel.
+  5. Press Preview to see a picture of the chart, then "Open folder".
+
+  New to it? Click "How to use" at the top right of the window for a short walkthrough. Every "?"
+  in the window explains the setting beside it (hover for a hint, click for the full story).
+
+
+PUTTING IT ON THE PLOTTER
+-------------------------
+  1. Copy the whole output folder (for example "Reef 5m_AT5") onto the SD card.
+     Don't rename the files inside it. Renaming the folder is fine.
+  2. Put the card in the plotter. In the chart settings choose Lowrance / Insight as the chart
+     source (not Navionics or C-MAP).
+  3. For satellite or bathymetry pictures, also turn on the Imagery / Shaded relief overlay.
+
+  If nothing shows: some older units only read files at the top of the card. Copy the .at5 files
+  themselves (not the folder) to the top of the card instead. Try a small chart first.
+
+  Several charts on one card: put each chart in its own folder on the card. Or tick
+  "Also put the name in the file names" before converting - then charts can share a folder.
+
+
+WHAT FILES WORK
+---------------
+  * Depth contours: vector MBTiles (.mbtiles) with contour lines and/or depth areas,
+    e.g. made with QGIS, GDAL, tippecanoe or downloaded survey data.
+  * Pictures: MBTiles with jpg/png tiles, GeoTIFF (.tif), or JPG/PNG with a world file.
+
+  The program works out on its own whether contour values are depths or heights.
+
+
+THE SETTINGS (the defaults suit almost every file)
+--------------------------------------------------
+  Chart name ......... how the plotter tells your charts apart. Filled in from the file name.
+                       The chart name, the file names and the date are stored inside the chart files
+                       (nothing else about you or your PC is). Pick a neutral name before sharing charts.
+  Colour style ....... Navionics style (recommended), paper chart (S-52), soft blue, or custom.
+  White from ......... water deeper than this is white (default 20 m). Raise it for more blue steps.
+  Coastline .......... Automatic uses the built-in world coastline (extra detail around Australia).
+                       Choose "None" for lakes, dams and rivers (it also switches off by itself when
+                       the chart is inland). Or Browse... to use your own coastline shapefile.
+  Drying strip ....... height of the green shore strip above chart datum (default 1.5 m, 0 = none).
+  Safety depth ....... optional: water shallower than this is shown red with a bold line.
+  Highlight .......... optional depth range to colour, e.g. 10-20.
+  Detail ............. pictures only. Auto uses the detail the file has.
+  More settings ...... which contours show when zoomed out, custom colours and other rarely needed options.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+  * "sat2at5.exe was not found": the folder was split up. Use the complete folder.
+  * The status line turns red: the messages box underneath says why (for example a file that
+    isn't a map).
+  * Preview looks empty: the file may have no data at that place, or it's a picture file with
+    transparent areas.
+  * Plotter shows nothing: check the chart source is Lowrance / Insight, the card is FAT32, and try
+    the files at the top of the card.
+
+  Press "Check files" to test the finished files. It should say "All chart files are valid".
+
+
+WHAT'S IN THIS FOLDER
+---------------------
+  AT5 Chart Maker.exe ........... the program (double-click this)
+  READ ME FIRST.txt ............. this guide
+  program\ ...................... the converter and built-in coastlines (leave as is)
+  Command line guide.txt ........ for advanced users and batch jobs
+  Licences and credits\ ......... the program's licence, where the coastline data comes from, and
+                                  its licences
+
+
+CREDITS
+-------
+  World coastline: GSHHG 2.3.7 (Wessel & Smith, University of Hawaii / NOAA), LGPL 3.
+  Australian coastline: GEODATA COAST 100K 2004, (c) Commonwealth of Australia (Geoscience
+  Australia), CC BY 4.0.
+  Details in "Licences and credits".
+
+AT5 Chart Maker is an independent project, not affiliated with Navico, Simrad, Lowrance, B&G or
+Navionics.

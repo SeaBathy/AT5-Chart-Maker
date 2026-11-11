@@ -1,0 +1,14 @@
+# build output
+bin/
+obj/
+dist/
+# coastline data: made by tools/fetch_coastlines.py, shipped in release zips only
+coastlines/
+# charts and maps
+*.at5
+*.mbtiles
+*.mbtiles-shm
+*.mbtiles-wal
+_preview.png
+_sat2at5_tmp/
+__pycache__/
