@@ -19,12 +19,13 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.0";
+static const wchar_t* kVersion = L"1.1";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
   ID_DRYING, ID_SAFETY, ID_HILITE, ID_FINEST, ID_MORE, ID_MAJOR, ID_FINE, ID_SYNTH, ID_BANDS, ID_OVERVIEW, ID_NAME,
   ID_PVLINES, ID_CONVERT, ID_PREVIEW, ID_VERIFY, ID_OPEN, ID_LOG, ID_GUIDE, ID_ABOUT,
+  ID_PALETTE, ID_RANGE, ID_SHADE, ID_CONTOURS, ID_INTERVAL,
   ID_HELP0 = 300,   // "?" buttons: ID_HELP0 + help topic
   TIMER_KIND = 1, TIMER_TICK = 2,
   WM_APP_LOG = WM_APP + 1, WM_APP_DONE, WM_APP_KIND
@@ -32,11 +33,14 @@ enum {
 
 // ---------------------------------------------------------------- help texts (title, short hint, full text)
 enum Topic { H_MAP, H_OUT, H_NAME, H_PROJECT, H_STYLE, H_DEEP, H_LAND, H_DRYING, H_SAFETY, H_HILITE, H_FINEST,
-             H_MAJOR, H_FINE, H_SYNTH, H_BANDS, H_OVERVIEW, H_VNAME, H_PVLINES, H_COUNT };
+             H_MAJOR, H_FINE, H_SYNTH, H_BANDS, H_OVERVIEW, H_VNAME, H_PVLINES,
+             H_PALETTE, H_RANGE, H_SHADE, H_CONTOURS, H_COUNT };
 struct Help { const wchar_t* title; const wchar_t* hint; const wchar_t* text; };
 static const Help kHelp[H_COUNT] = {
   {L"Map file", L"The map to turn into a chart: a depth chart or a picture.",
-   L"Two kinds of map work:\n\n"
+   L"Three kinds of map work:\n\n"
+   L"\x2022  Depth surveys: a GeoTIFF (.tif) of depths, such as a BathyPicker file or a survey download. It "
+   L"becomes a coloured, shaded depth picture, and contour lines too if you like.\n\n"
    L"\x2022  Depth charts: vector .mbtiles files with contour lines and/or depth areas (made with QGIS, GDAL or "
    L"tippecanoe, or downloaded survey data). They become coloured depth charts.\n\n"
    L"\x2022  Pictures: satellite photos or coloured bathymetry as .mbtiles (jpg or png tiles), GeoTIFF (.tif), or "
@@ -102,6 +106,27 @@ static const Help kHelp[H_COUNT] = {
   {L"Contour lines in Preview", L"Draw the lines in the preview picture.",
    L"Draws the contour lines in the Preview picture. With dense 1 m contours the lines can hide the colours, so "
    L"it's off by default. It doesn't change the chart itself."},
+  {L"Colours", L"The colours used for the depths.",
+   L"\x2022  Spectrum: red in the shallows through yellow and green to deep blue. Shows the most detail.\n"
+   L"\x2022  Lagoon: pale turquoise shallows to dark blue.\n"
+   L"\x2022  Thermal: pale yellow to deep purple.\n"
+   L"\x2022  Chart blues: the light blues of a paper chart.\n"
+   L"\x2022  Grey: light (shallow) to dark (deep)."},
+  {L"Depth range", L"Which depths the colours are spread over.",
+   L"The colours are spread over this range of depths, for example 0-200. Water deeper than the range shows "
+   L"in the deepest colour.\n\n"
+   L"A small range (say 0-30) shows the reefs and shallows in much more detail. A big range (say 0-2000) "
+   L"shows the whole drop-off, with fewer colours left for the shallows.\n\n"
+   L"Leave it empty for automatic: from 0 to about the deepest water in the survey."},
+  {L"Hillshade", L"Shading that makes the seabed look 3D.",
+   L"Light from the north-west shades the slopes, so reefs, ridges and channels stand out.\n\n"
+   L"Off gives flat colours; Strong makes every bump show. Medium suits most surveys."},
+  {L"Contour lines", L"Also makes a chart of depth contour lines.",
+   L"Draws depth contour lines from the survey, with their depths written along them, as a separate depth "
+   L"chart in the same folder. On the plotter you can show the coloured picture, the lines, or both: the "
+   L"picture is the Imagery / Shaded relief overlay, the lines are the chart.\n\n"
+   L"Type the spacing in metres (for example 5), a list of depths (2,5,10,20,50), or leave it empty for "
+   L"automatic spacing."},
 };
 
 // ---------------------------------------------------------------- state
@@ -109,6 +134,7 @@ static HWND gWnd, gTip;
 static HWND gIn, gInBrowse, gKind, gOut, gOutBrowse, gDesc, gProject;
 static HWND gScheme, gDeep, gLand, gLandBrowse, gDrying, gSafety, gHilite, gFinest, gPicNote, gMore;
 static HWND gMajor, gFine, gSynth, gBands, gOverview, gName, gPvLines;
+static HWND gPalette, gRange, gShade, gContours, gInterval, gBathyNote, lPalette, lRange, lRangeM, lShade, lIntervalM;
 static HWND gConvert, gPreview, gVerify, gOpen, gProg, gStatus, gLog, gGuide, gAbout;
 static HWND gHelpBtn[H_COUNT];
 static HWND lMap, lOut, lName, lStyle, lDeep, lDeepM, lLand, lDry, lDryM, lSafe, lSafeM, lHi, lFinest;
@@ -120,7 +146,7 @@ static HANDLE gJob;
 static UINT gDpi = 96;
 static bool gBusy, gStopped, gAdvanced;
 static int gTask;            // 0 convert, 1 preview, 2 check
-static int gKindCode = -1;   // -1 none, 0 depth, 1 picture, 2 problem
+static int gKindCode = -1;   // -1 none, 0 depth, 1 picture, 2 problem, 3 depth survey (GeoTIFF of depths)
 static ULONGLONG gStart;
 static std::wstring gPreviewPng, gLastLine, gKindText;
 static COLORREF gKindColor, gStatusColor;
@@ -201,13 +227,16 @@ static const GuidePage kGuide[] = {
    L"Insight Map Creator.\n\n"
    L"\x2022  Depth charts from contour lines (1 m, 5 m ...), coloured like Navionics: tan land, a green drying "
    L"strip, blue getting lighter with depth, white deep water.\n"
-   L"\x2022  Satellite photos or coloured bathymetry as the plotter's imagery layer.\n\n"
+   L"\x2022  Satellite photos or coloured bathymetry as the plotter's imagery layer.\n"
+   L"\x2022  Depth surveys (a GeoTIFF of depths, e.g. from BathyPicker): a coloured, shaded depth picture, with "
+   L"contour lines on top if you like.\n\n"
    L"You need: your map file, and an SD / microSD card of 32 GB or smaller, formatted FAT32.\n\n"
    L"Not for navigation. These are home-made charts; always carry official charts."},
   {L"Step 1 \x2013 Choose your map",
    L"Drag your map file anywhere onto the window, or press Browse next to Map file.\n\n"
    L"The program works out what kind of map it is and shows only the settings that apply. The Save to folder "
    L"and the Chart name fill in by themselves.\n\n"
+   L"Depth surveys: a GeoTIFF (.tif) of depths, for example from BathyPicker.\n"
    L"Depth charts: vector .mbtiles with contour lines or depth areas.\n"
    L"Pictures: .mbtiles with jpg/png tiles, GeoTIFF (.tif), or .jpg/.png with a world file."},
   {L"Step 2 \x2013 Pick the look",
@@ -352,7 +381,7 @@ static BOOL CALLBACK SetFontProc(HWND c, LPARAM) {
   HFONT f = gFont;
   if (c == gLog) f = gMono;
   else if (c == gStatus) f = gFontBold;
-  else if (c == gPicNote) f = gFontSmall;
+  else if (c == gPicNote || c == gBathyNote) f = gFontSmall;
   SendMessageW(c, WM_SETFONT, (WPARAM)f, TRUE);
   return TRUE;
 }
@@ -370,7 +399,8 @@ static const int kLeftW = 660;   // left column (steps 1 and 2), DIP
 // returns the client height the content needs.
 static int Layout(int W, int H) {
   const int M = S(16), P = S(18), G = S(8), RH = S(26), LW = S(104), HB = S(20), BW = S(92), GAP = S(12), ROW = RH + S(10);
-  const bool depth = gKindCode != 1;
+  const bool bathy = gKindCode == 3;
+  const bool depth = gKindCode != 1 && !bathy;
   gCards.clear();
   Put(gAbout, W - M - S(56), S(20), S(56), S(24));
   Put(gGuide, W - M - S(56) - S(110), S(20), S(110), S(24));
@@ -412,7 +442,50 @@ static int Layout(int W, int H) {
   // 2  Chart look
   top = y;
   y += S(46);
-  if (depth) {
+  const std::initializer_list<HWND> bathyCtl = {lPalette, gPalette, gHelpBtn[H_PALETTE], lRange, gRange, lRangeM, gHelpBtn[H_RANGE],
+                                                lShade, gShade, gHelpBtn[H_SHADE], gContours, gInterval, lIntervalM,
+                                                gHelpBtn[H_CONTOURS], gBathyNote};
+  if (bathy) {
+    Hide({lStyle, gScheme, gHelpBtn[H_STYLE], lDeep, gDeep, lDeepM, gHelpBtn[H_DEEP], lDry, gDrying, lDryM, gHelpBtn[H_DRYING],
+          lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
+          gHelpBtn[H_MAJOR], lFine, gFine, gHelpBtn[H_FINE], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
+          gHelpBtn[H_BANDS], gOverview, gHelpBtn[H_OVERVIEW], lVName, gName, gHelpBtn[H_VNAME], gPvLines,
+          gHelpBtn[H_PVLINES], lFinest, gFinest, gHelpBtn[H_FINEST], gPicNote});
+    label(lPalette, x0, y, LW);
+    Put(gPalette, x0 + LW, y, S(230), S(300));
+    help(H_PALETTE, x0 + LW + S(230) + G, y);
+    {
+      int cx = x0 + LW + S(230) + G + HB + S(28);
+      label(lRange, cx, y, S(84)); cx += S(84);
+      Put(gRange, cx, y, S(80), RH); cx += S(80) + S(4);
+      unit(lRangeM, cx, y);
+      help(H_RANGE, cx, y);
+    }
+    y += ROW;
+    label(lShade, x0, y, LW);
+    Put(gShade, x0 + LW, y, S(230), S(300));
+    help(H_SHADE, x0 + LW + S(230) + G, y);
+    y += ROW;
+    {
+      int cx = x0;
+      Put(gContours, cx, y + S(2), S(212), S(22)); cx += S(212);
+      Put(gInterval, cx, y, S(110), RH); cx += S(110) + S(4);
+      unit(lIntervalM, cx, y);
+      help(H_CONTOURS, cx, y);
+    }
+    y += ROW;
+    label(lLand, x0, y, LW);
+    help(H_LAND, right - HB, y);
+    Put(gLandBrowse, right - HB - G - BW, y - S(1), BW, RH + S(2));
+    Put(gLand, x0 + LW, y, right - HB - G - BW - G - (x0 + LW), S(300));
+    EnableWindow(gLand, SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    EnableWindow(gLandBrowse, SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    y += ROW;
+    Put(gBathyNote, x0, y, right - x0, S(40));
+    y += S(40) - S(8);
+  } else if (depth) {
+    Hide(bathyCtl);
+    EnableWindow(gLand, TRUE); EnableWindow(gLandBrowse, TRUE);
     label(lStyle, x0, y, LW);
     Put(gScheme, x0 + LW, y, S(230), S(300));
     help(H_STYLE, x0 + LW + S(230) + G, y);
@@ -487,6 +560,7 @@ static int Layout(int W, int H) {
             gPvLines, gHelpBtn[H_PVLINES]});
     }
   } else {
+    Hide(bathyCtl);
     Hide({lStyle, gScheme, gHelpBtn[H_STYLE], lDeep, gDeep, lDeepM, gHelpBtn[H_DEEP], lLand, gLand, gLandBrowse,
           gHelpBtn[H_LAND], lDry, gDrying, lDryM, gHelpBtn[H_DRYING], lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi,
           gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM, gHelpBtn[H_MAJOR], lFine, gFine, gHelpBtn[H_FINE],
@@ -501,7 +575,8 @@ static int Layout(int W, int H) {
   }
   y += P - S(2);
   gCards.push_back({{L0, top, L1, y}, 2, L"Chart look",
-                    gKindCode == 1 ? L"Pictures keep their own colours" : L"The defaults suit almost every file"});
+                    gKindCode == 1 ? L"Pictures keep their own colours" : bathy ? L"Colours, shading and contour lines"
+                                                                                 : L"The defaults suit almost every file"});
   const int leftBottom = y;
 
   // 3  Make the chart (right column)
@@ -651,7 +726,8 @@ static void DetectKind() {
   std::thread([in] {
     const std::string r = RunCapture(L"info " + Q(in));
     int code = 9;
-    if (r.rfind("depth", 0) == 0) code = 0;
+    if (r.rfind("bathymetry", 0) == 0) code = 7;
+    else if (r.rfind("depth", 0) == 0) code = 0;
     else if (r.rfind("picture", 0) == 0) code = 1;
     else if (r.rfind("elevation", 0) == 0) code = 2;
     else if (r.rfind("invalid", 0) == 0) code = 3;
@@ -670,15 +746,17 @@ static void OnKind(int code) {
       L"File not found.",
       L"That's a folder \x2013 choose a map file inside it.",
       L"This file type isn't supported. Use .mbtiles, .tif, or .jpg/.png with a world file.",
+      L"\x2713  Depth survey \x2013 becomes a coloured, shaded depth picture, with contour lines if you like",
   };
-  gKindCode = code == 0 ? 0 : code == 1 ? 1 : 2;
-  if (code <= 1 && Trim(GetText(gOut)).empty()) {
+  gKindCode = code == 0 ? 0 : code == 1 ? 1 : code == 7 ? 3 : 2;
+  const bool good = code <= 1 || code == 7;
+  if (good && Trim(GetText(gOut)).empty()) {
     const std::wstring in = Trim(GetText(gIn));
     const size_t slash = in.find_last_of(L"\\/");
     SetWindowTextW(gOut, ((slash == std::wstring::npos ? L"." : in.substr(0, slash)) + L"\\" + Stem(in) + L"_AT5").c_str());
   }
-  gKindText = code >= 0 && code <= 6 ? text[code] : L"Could not read this file.";
-  gKindColor = code <= 1 ? kOk : kWarn;
+  gKindText = code >= 0 && code <= 7 ? text[code] : L"Could not read this file.";
+  gKindColor = good ? kOk : kWarn;
   SetWindowTextW(gKind, gKindText.c_str());
   Relayout(true);
 }
@@ -939,7 +1017,29 @@ static void OnConvert() {
   const std::wstring desc = Trim(GetText(gDesc));
   if (!desc.empty()) args += L" --desc " + Q(desc);
   if (!project.empty()) args += L" --project " + Q(project);
-  if (gKindCode == 1) {   // picture
+  if (gKindCode == 3) {   // depth survey
+    static const wchar_t* palettes[] = {L"spectrum", L"lagoon", L"thermal", L"chart", L"grey"};
+    static const wchar_t* shades[] = {L"0", L"30", L"60", L"90"};
+    const int pi = int(SendMessageW(gPalette, CB_GETCURSEL, 0, 0)), si = int(SendMessageW(gShade, CB_GETCURSEL, 0, 0));
+    args += std::wstring(L" --palette ") + palettes[std::clamp(pi, 0, 4)];
+    args += std::wstring(L" --hillshade ") + shades[std::clamp(si, 0, 3)];
+    std::wstring range;
+    for (wchar_t c : Trim(GetText(gRange))) if (c != L' ' && c != L'm') range += c;
+    if (!range.empty()) {
+      if (range.find(L'-', 1) == std::wstring::npos) range = L"0-" + range;   // "200" means 0-200
+      args += L" --depth-range " + Q(range);
+    }
+    if (SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+      std::wstring every;
+      for (wchar_t c : Trim(GetText(gInterval))) if (c != L' ' && c != L'm') every += c;
+      args += L" --contours " + Q(every.empty() ? std::wstring(L"auto") : every);
+      const int landSel = int(SendMessageW(gLand, CB_GETCURSEL, 0, 0));
+      std::wstring land = Trim(GetText(gLand));
+      if (landSel == 0) land = L"auto";
+      else if (landSel == 1) land.clear();
+      if (!land.empty()) args += L" --land " + Q(land);
+    }
+  } else if (gKindCode == 1) {   // picture
     static const wchar_t* finest[] = {nullptr, L"0.5", L"1", L"2", L"4", L"8", L"16"};
     const int fi = int(SendMessageW(gFinest, CB_GETCURSEL, 0, 0));
     if (fi > 0 && fi < 7) args += std::wstring(L" --finest ") + finest[fi];
@@ -1073,6 +1173,20 @@ static void CreateControls() {
   HelpBtn(H_FINEST);
   gPicNote = Label(L"Picture maps keep their own colours. The plotter shows them as its imagery / shaded-relief layer, "
                    L"so turn that overlay on in the plotter's chart settings.");
+  // 2  Chart look (depth surveys)
+  lPalette = Label(L"Colours");
+  gPalette = Combo(ID_PALETTE, {L"Spectrum (red shallow, blue deep)", L"Lagoon", L"Thermal", L"Chart blues", L"Grey"}, 0);
+  HelpBtn(H_PALETTE);
+  lRange = Label(L"Depth range"); gRange = EditBox(ID_RANGE, L"auto"); lRangeM = Label(L"m");
+  HelpBtn(H_RANGE);
+  lShade = Label(L"Hillshade");
+  gShade = Combo(ID_SHADE, {L"Off", L"Light", L"Medium (recommended)", L"Strong"}, 2);
+  HelpBtn(H_SHADE);
+  gContours = Check(L"Also make contour lines every", ID_CONTOURS, true);
+  gInterval = EditBox(ID_INTERVAL, L"auto"); lIntervalM = Label(L"m");
+  HelpBtn(H_CONTOURS);
+  gBathyNote = Label(L"The picture becomes the plotter's imagery / shaded-relief layer and the contour lines a chart "
+                     L"on top, each switched on and off in the plotter's chart settings.");
   // 3  Make the chart
   gConvert = Btn(L"Convert", ID_CONVERT, BS_OWNERDRAW);
   gPreview = Btn(L"Preview", ID_PREVIEW);
@@ -1191,6 +1305,12 @@ static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
           const std::wstring o = Trim(GetText(gOut));
           if (!o.empty() && GetFileAttributesW(o.c_str()) != INVALID_FILE_ATTRIBUTES) ShellExecuteW(h, L"open", o.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
           else InfoBox(L"No folder yet", L"The Save to folder is made when you press Convert.");
+          break;
+        }
+        case ID_CONTOURS: {   // contour lines on/off: the spacing and coastline only matter with lines
+          const BOOL on = SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED;
+          EnableWindow(gInterval, on);
+          Relayout(true);
           break;
         }
         case ID_MORE:

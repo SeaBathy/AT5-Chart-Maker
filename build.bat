@@ -19,7 +19,7 @@ if not exist bin mkdir bin
 if not exist obj mkdir obj
 rc /nologo /fo obj\app.res src\app.rc || exit /b 1
 cl /nologo /std:c++20 /utf-8 /O2 /Oi /GL /EHsc /MT /W3 /DNDEBUG /DUNICODE /D_UNICODE ^
-   /Foobj\ src\main.cpp src\at5.cpp src\sources.cpp src\vector.cpp obj\app.res ^
+   /Foobj\ src\main.cpp src\at5.cpp src\sources.cpp src\vector.cpp src\depth.cpp obj\app.res ^
    /Fe:bin\sat2at5.exe /link /LTCG /MANIFEST:EMBED /MANIFESTINPUT:src\sat2at5.manifest windowscodecs.lib ole32.lib propsys.lib winsqlite3.lib || exit /b 1
 cl /nologo /std:c++20 /utf-8 /O2 /EHsc /MT /W3 /DNDEBUG /DUNICODE /D_UNICODE /Foobj\ src\gui.cpp obj\app.res ^
    /Fe:bin\sat2at5_gui.exe /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTINPUT:src\gui.manifest user32.lib gdi32.lib comctl32.lib shell32.lib ole32.lib || exit /b 1

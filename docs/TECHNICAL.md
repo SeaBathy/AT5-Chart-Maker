@@ -7,6 +7,7 @@ The window program (`AT5 Chart Maker.exe`, built as `bin\sat2at5_gui.exe`) runs 
 | Input | Output |
 |---|---|
 | Raster MBTiles (jpg/png/webp), GeoTIFF, or JPG/PNG/TIF + world file | Satellite/3D texture layers: `_3DTexture_<N>.at5` (N = metres per pixel, 0.5 … 8192) |
+| **Depth** GeoTIFF (one band of depths or heights) | A coloured, hillshaded depth picture as texture layers, plus (with `--contours`) a contour-line depth chart, `Large*.at5` + `Medium.at5` |
 | **Vector** MBTiles (`format=pbf`, Mapbox Vector Tiles) | Vector depth chart in IMC's layout, coloured like a real chart (S-52 or Navionics style, true RGB): `Large*.at5` (depth areas, land, depth contours) + `Medium.at5` (zoomed-out overview) |
 
 The tool detects which kind of MBTiles you give it.
@@ -66,6 +67,40 @@ sat2at5 photo.jpg -o out --crs 4326   (image + .jgw/.pgw/.tfw/.wld world file)
 | `--project NAME` | off | IMC "Project Based Naming": `_3DTexture_NAME_16.at5`, `NAME_Large.at5` …, so charts can share a folder. |
 | `--split-mb N` | 450 | Maximum file size before splitting into `_0`, `_1`, …. |
 | `--threads N` | all cores | Worker threads. |
+
+## Depth GeoTIFFs (bathymetry surveys)
+
+```
+sat2at5 survey.tif -o out                                   (coloured, shaded picture)
+sat2at5 survey.tif -o out --contours 5 --land auto          (picture + contour lines every 5 m)
+sat2at5 survey.tif -o out --depth-range 0-30 --palette lagoon --hillshade 80
+sat2at5 survey.tif -o out --contours 2,5,10,20,50 --contours-only
+```
+
+A GeoTIFF with one band of 16/32/64-bit numbers is read as depths (`sat2at5 info` says `bathymetry`); an
+8-bit or colour GeoTIFF stays a picture. Values that are mostly negative are taken as heights (depth =
+−value). Readable: classic TIFF and BigTIFF, tiled or striped, uncompressed / LZW / Deflate / PackBits,
+with the integer and floating-point predictors; longitude/latitude, Web Mercator, UTM / MGA (GDA94,
+GDA2020, WGS84) and Australian Albers (EPSG:3577, 9473). Other projections: re-project first
+(`gdalwarp -t_srs EPSG:4326`). Grids over 300 million cells are read at a reduced resolution.
+
+| option | default | meaning |
+|---|---|---|
+| `--depth-range A-B` | 0 … about the deepest 2 % | Depths the colours are spread over; deeper water shows in the deepest colour. |
+| `--palette P` | spectrum | spectrum, lagoon, thermal, chart or grey. |
+| `--hillshade N` | 60 | Shading amount, 0 (flat colours) … 100. Light from the north-west, 45° up. |
+| `--relief N` | 4 | How strongly slopes show in the shading. |
+| `--hide-above-water` | off | Leave ground above chart datum clear instead of sand-coloured. |
+| `--contours S` | off | Also make the contour-line chart: a spacing (`5`), a list (`2,5,10,20,50`) or `auto`. The vector options below apply (`--land`, `--colours`, `--safety-depth` …). |
+| `--contours-only` | off | Only the contour chart, no picture. |
+| `--elevation` / `--no-elevation` | detected | Values are heights / depths. |
+| `--as-image` | off | Treat the file as an ordinary picture. |
+
+The picture uses the texture writer below (finest level from the survey's cell size). The contours are
+traced on the grid (lightly smoothed, marching squares), simplified, written to a temporary vector
+MBTiles and converted by the vector writer. The chart is lines only by default: the picture already
+colours the water, and filling between contour lines would have to guess beyond the survey's edge
+(`--areas-from-contours` fills it anyway).
 
 ## Vector depth charts (vector MBTiles)
 
@@ -219,6 +254,7 @@ Other vector options:
 - `src/at5.*`: AT5 container, keys, verifier
 - `src/dxt1.hpp`: BC1 texture encoder
 - `src/sources.*`: picture inputs (MBTiles, GeoTIFF, world files)
+- `src/depth.*`: depth GeoTIFFs: TIFF reader, map projections, coloured hillshaded imagery, contour lines
 - `src/vector.*`: vector tiles, depth areas from contours, coastline, vector chart encoder
 - `src/inflate.hpp`: gzip decoder
 - `src/styles.hpp`: the default chart styles (land, depth areas, contours, contour labels), written field by field

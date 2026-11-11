@@ -6,7 +6,7 @@
 Free, works offline.</p>
 
 <p align="center">
-  <img alt="Version 1.0" src="https://img.shields.io/badge/version-1.0-0f766e">
+  <img alt="Version 1.1" src="https://img.shields.io/badge/version-1.1-0f766e">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
@@ -19,7 +19,7 @@ Free, works offline.</p>
 
 - **Depth charts from contour lines.** 1 m, 5 m or any spacing, with or without depth areas. They're coloured like Navionics: tan land, a green drying strip, blue getting lighter with each contour, and white deep water. The colour edges sit exactly on the contour lines.
 - **Satellite photos and coloured bathymetry.** These become the plotter's imagery / shaded-relief layer.
-- **Bathymetry surveys on your sounder.** Turn a depth GeoTIFF into a coloured depth chart or a shaded-relief layer: see [Bathymetry charts on your sounder](#bathymetry-charts-on-your-sounder).
+- **Bathymetry surveys on your sounder.** Open a depth GeoTIFF (for example from BathyPicker) and get a coloured, hillshaded depth picture, with contour lines on top if you like. You choose the colours, the depth range and the shading: see [Bathymetry charts on your sounder](#bathymetry-charts-on-your-sounder).
 - **Built-in world coastline.** Land is drawn and the water is coloured right up to the shore, with extra detail around Australia. It switches off by itself for lakes and dams.
 - **Fast.** All of Australia's 5 m contours convert in about 15 minutes; a bay takes seconds.
 - **Same files as Navico's Insight Map Creator.** The output is `.at5` charts with the same names and layout, so you copy the folder to an SD card and the plotter reads it.
@@ -28,7 +28,7 @@ Free, works offline.</p>
 
 ## Download
 
-1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.0.zip`.
+1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.1.zip`.
 2. Unzip it anywhere and open the folder.
 3. Double-click **`AT5 Chart Maker.exe`**.
 
@@ -50,27 +50,37 @@ The program also has a step-by-step guide built in (**How to use**, top right). 
 | Your file | Becomes |
 |---|---|
 | **Vector MBTiles** (`.mbtiles` with contour lines and/or depth areas), for example made with QGIS, GDAL or tippecanoe, or downloaded survey data | A coloured depth chart: `Large.at5` (detail) + `Medium.at5` (zoomed-out overview) |
+| **Depth GeoTIFF** (`.tif` of depths or heights, for example from BathyPicker or a survey download) | A coloured, shaded depth picture for the imagery layer, plus contour lines as a depth chart if you tick the box |
 | **Picture MBTiles** (jpg/png tiles), **GeoTIFF** (`.tif`), or **JPG/PNG with a world file** (`.jgw` / `.pgw`) | The plotter's imagery layer: `_3DTexture_16.at5`, `_3DTexture_32.at5` … |
 
 Contour values can be depths (5, 10, 15) or heights (−5, −10, −15). It works out which on its own.
 
 ## Bathymetry charts on your sounder
 
-Have a high-detail depth survey? Put it on your plotter. Any bathymetry GeoTIFF works, for
-example one made with [BathyPicker](https://github.com/SeaBathy/BathyPicker) (10 m detail,
-anywhere in Australian waters) or downloaded from a survey portal. There are two ways, and
-you can load both on the card:
+Have a high-detail depth survey? Put it on your plotter. Open the GeoTIFF straight in AT5 Chart
+Maker: for example one made with [BathyPicker](https://github.com/SeaBathy/BathyPicker) (10 m detail,
+anywhere in Australian waters) or downloaded from a survey portal. It is recognised as a
+**depth survey**, and you get two layers in one folder:
 
 | | |
 |---|---|
-| **As a depth chart.** Draw depth contours from the survey and save them as vector MBTiles. AT5 Chart Maker colours the water between them like a proper chart, with land from the built-in coastline, a drying strip, and blues that step with each contour. | <img src="docs/images/10-bathymetry-chart.png" width="360" alt="A depth chart of Whitsunday and Hook Islands made from contours"> |
-| **As a shaded-relief picture.** Colour the survey by depth and save it as picture MBTiles. It becomes the plotter's imagery / shaded-relief layer, so every reef and channel shows in full colour under your chart. | <img src="docs/images/09-bathymetry-imagery.png" width="360" alt="The same area as a coloured bathymetry picture"> |
+| **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how much **hillshade**. A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
+| **Contour lines** every few metres (or at depths you list), labelled with their depth, as a depth chart on top. Switch the picture and the lines on and off separately on the plotter. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
 
-Both examples above are the Whitsundays, from a BathyPicker GeoTIFF. Both outputs pass
-`sat2at5 verify`.
+Both examples are a reef in the central Great Barrier Reef (about 18.06°S 146.56°E), from a BathyPicker GeoTIFF. Most
+GeoTIFFs work: longitude/latitude, Web Mercator, UTM / MGA zones and Australian Albers; 16-bit,
+32-bit and 64-bit values; uncompressed, LZW, Deflate or PackBits; BigTIFF too.
+
+**The other way, with GDAL:** you can still make the MBTiles yourself, for full control over the
+colour ramp or a depth chart with the water coloured between the contours. Those MBTiles also
+open in [SeaBathy](https://github.com/SeaBathy/seabathy-android) on your phone or PC.
 
 <details>
 <summary><b>How to make the MBTiles (GDAL commands)</b></summary>
+
+| Depth chart from contours, water coloured between the lines | Coloured bathymetry picture with your own colour ramp |
+|---|---|
+| <img src="docs/images/10-bathymetry-chart.png" width="360" alt="A depth chart of Whitsunday and Hook Islands made from contours"> | <img src="docs/images/09-bathymetry-imagery.png" width="360" alt="The same area as a coloured bathymetry picture"> |
 
 These use [GDAL](https://gdal.org), which comes free with QGIS and OSGeo4W (and BathyPicker
 installs a copy). Depths below sea level are negative in IMAS and most surveys.

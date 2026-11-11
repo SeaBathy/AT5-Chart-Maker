@@ -6,6 +6,8 @@ Navico's Insight Map Creator makes). Free, no installing, works offline.
   * Depth charts from contour lines (1 m, 5 m ...) - coloured like Navionics: tan land, green drying
     strip, blue getting lighter with depth, white deep water. Works with or without depth areas.
   * Satellite photos or coloured bathymetry pictures as the plotter's imagery / shaded-relief layer.
+  * Depth surveys (a GeoTIFF of depths, e.g. from BathyPicker): a coloured, shaded depth picture in the
+    colours and depth range you choose, plus contour lines on top if you like.
 
 NOT FOR NAVIGATION. These are home-made charts. Always carry official charts.
 
@@ -56,6 +58,7 @@ WHAT FILES WORK
 ---------------
   * Depth contours: vector MBTiles (.mbtiles) with contour lines and/or depth areas,
     e.g. made with QGIS, GDAL, tippecanoe or downloaded survey data.
+  * Depth surveys: a GeoTIFF (.tif) of depths or heights, e.g. from BathyPicker or a survey download.
   * Pictures: MBTiles with jpg/png tiles, GeoTIFF (.tif), or JPG/PNG with a world file.
 
   The program works out on its own whether contour values are depths or heights.

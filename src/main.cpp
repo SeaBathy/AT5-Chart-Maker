@@ -1,5 +1,6 @@
 // sat2at5 - fast satellite imagery (MBTiles / GeoTIFF / world-file images) -> Simrad/Lowrance AT5 3D-texture converter.
 #include "at5.hpp"
+#include "depth.hpp"
 #include "dxt1.hpp"
 #include "sources.hpp"
 #include "vector.hpp"
@@ -223,6 +224,10 @@ struct ConvertOpts {
   vec::Options v;
   bool descSet = false;
   std::string project;   // IMC "Project Based Naming": prefix in the output file names (empty = IMC default names)
+  // depth GeoTIFFs (bathymetry surveys)
+  depth::Options d;
+  std::string contours = "off";   // contour lines for the vector chart: off, auto, a spacing or a list
+  bool imagery = true;            // the coloured, shaded picture (imagery layer)
 };
 
 std::string gNewOutDir;   // output folder this run created (removed again if the run fails and leaves it empty)
@@ -294,10 +299,10 @@ std::vector<std::string> WriteLevel(int e, bool top, LevelStore& st, const fs::p
   return names;
 }
 
-int Convert(const ConvertOpts& o) {
+int Convert(const ConvertOpts& o, std::unique_ptr<src::Source> given = nullptr) {
   auto tStart = Clock::now();
   src::OpenOptions oo; oo.zoom = o.zoom; oo.crs = o.crs;
-  auto source = src::Open(o.input, oo);
+  auto source = given ? std::move(given) : src::Open(o.input, oo);
   auto b = source->Bounds();
   printf("Source: %s\n  bounds lon %.6f..%.6f lat %.6f..%.6f\n  native %.3f m/px (Lowrance Mercator)\n", source->Describe().c_str(),
          b.lonMin, b.lonMax, b.latMin, b.latMax, source->NativeMpp());
@@ -352,6 +357,42 @@ int Convert(const ConvertOpts& o) {
   printf("Done: %.1f MB in %.1f s total. Copy this folder to the chart card (one folder per chart).\n", total / 1e6,
          std::chrono::duration<double>(Clock::now() - tStart).count());
   return 0;
+}
+
+// A depth GeoTIFF: the coloured, shaded picture (imagery layer) and, when asked, a depth chart from contour
+// lines (vector layer), both in the one output folder.
+int ConvertDepth(ConvertOpts o) {
+  printf("Depth GeoTIFF: %s\n", o.input.c_str());
+  o.d.crs = o.crs;
+  auto grid = depth::Load(o.input, o.d);
+  const auto levels = depth::ContourLevels(*grid, o.contours);
+  if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
+  if (o.imagery) {
+    const int rc = Convert(o, depth::MakeImagery(grid, o.d));
+    if (rc) return rc;
+  }
+  if (levels.empty()) {
+    printf("No contour lines (add --contours 5, or --contours auto, for a depth chart with contours too)\n");
+    return 0;
+  }
+  std::string list;
+  for (size_t i = 0; i < levels.size() && i < 12; ++i) { char b[32]; snprintf(b, sizeof b, "%s%g", i ? ", " : "", levels[i]); list += b; }
+  if (levels.size() > 12) list += ", ...";
+  printf("\nDepth chart: contour lines at %zu depths (%s m)\n", levels.size(), list.c_str());
+  fs::create_directories(o.outDir);
+  const std::string tmp = (fs::path(o.outDir) / "_sat2at5_contours.mbtiles").string();
+  struct Gone { std::string p; ~Gone() { std::error_code ec; fs::remove(p, ec); } } gone{tmp};
+  const size_t n = depth::WriteContours(*grid, levels, tmp);
+  printf("  %zu contour lines\n", n);
+  if (n == 0) { printf("No contour lines fall inside this survey's depths - no depth chart made.\n"); return 0; }
+  vec::Options v = o.v;
+  v.elevation = false; v.elevationAuto = false;   // the contour file holds depths
+  // Lines only by default: the depth picture already colours the water, and filling between contour lines
+  // would have to guess beyond the survey's edge. --areas-from-contours fills it anyway.
+  if (v.areasFromContours < 0) v.areasFromContours = 0;
+  if (!o.project.empty()) { v.name = o.project + "_" + v.name; v.overviewName = o.project + "_" + v.overviewName; }
+  v.zoom = -1; v.threads = o.threads; v.splitMb = o.splitMb; v.desc = o.desc;
+  return vec::Convert(tmp, o.outDir, v, TodayLong());
 }
 
 int CmdVerify(const std::vector<std::string>& paths, bool verbose) {
@@ -531,6 +572,20 @@ void Usage() {
       "                        (default: automatic when the tiles have contours but no depth-area polygons)\n"
       "      --major-contours N   contours at multiples of N m show at every zoom (default 5)\n"
       "      --fine-contours close|medium|always|never   when the other (e.g. 1 m) contours appear (default close)\n\n"
+      "  Depth GeoTIFF (one band of depths or heights, e.g. a BathyPicker or survey file) -> a coloured, shaded\n"
+      "  depth picture (imagery layer) and, with --contours, a depth chart with contour lines (vector layer):\n"
+      "  sat2at5 <survey.tif> [-o outdir] [--depth-range 0-200] [--palette spectrum] [--hillshade 60] [--contours 5]\n"
+      "      --depth-range A-B  spread the colours over A..B m (default 0 .. about the deepest 2 %%); deeper water\n"
+      "                        shows in the deepest colour. A small range shows the shallows in more detail\n"
+      "      --palette P       spectrum (default), lagoon, thermal, chart or grey\n"
+      "      --hillshade N     shading amount 0 (flat colours) .. 100 (default 60)\n"
+      "      --relief N        how strongly slopes show in the shading (default 4)\n"
+      "      --hide-above-water  leave ground above chart datum (islands, drying reef) clear instead of sand\n"
+      "      --contours S      also make the depth chart: S = a spacing in m (5), a list (2,5,10,20,50) or auto;\n"
+      "                        uses the vector options above (--colours, --land, --safety-depth ...). Default off\n"
+      "      --contours-only   make just the depth chart, not the picture\n"
+      "      --elevation / --no-elevation   values are heights / depths (default: detected)\n"
+      "      --as-image        treat the file as an ordinary picture instead\n\n"
       "  sat2at5 verify <file.at5|folder>... [-v]   check headers, checksums, keys and tile structure\n"
       "  sat2at5 preview <file.at5|folder> <out.png> [maxpx] [--no-lines]   render north-up (--no-lines: vector colours only;\n"
       "      a folder shows the whole chart)\n"
@@ -558,7 +613,8 @@ int main(int argc, char** argv) {
         else if (vec::IsVectorMbtiles(a[1])) printf("depth\n");
         else if (!vec::RasterDemEncoding(a[1]).empty()) printf("elevation\n");
         else printf("picture\n");
-      } else if (ext == ".tif" || ext == ".tiff" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") printf("picture\n");
+      } else if ((ext == ".tif" || ext == ".tiff") && depth::IsDepthTiff(a[1])) printf("bathymetry\n");
+      else if (ext == ".tif" || ext == ".tiff" || ext == ".jpg" || ext == ".jpeg" || ext == ".png") printf("picture\n");
       else printf("unknown\n");
       return 0;
     }
@@ -611,8 +667,26 @@ int main(int argc, char** argv) {
       else if (a[i] == "--contour-layers") o.v.contourLayers = val();
       else if (a[i] == "--depth-attr") o.v.depthAttr = val();
       else if (a[i] == "--contour-attr") o.v.contourAttr = val();
-      else if (a[i] == "--elevation") { o.v.elevation = true; o.v.elevationAuto = false; }
-      else if (a[i] == "--no-elevation") { o.v.elevation = false; o.v.elevationAuto = false; }
+      else if (a[i] == "--elevation") { o.v.elevation = true; o.v.elevationAuto = false; o.d.elevation = 1; }
+      else if (a[i] == "--no-elevation") { o.v.elevation = false; o.v.elevationAuto = false; o.d.elevation = 0; }
+      else if (a[i] == "--depth-range") {   // A-B metres
+        const std::string opt = a[i], v = val();
+        const size_t dash = v.find('-', 1);
+        if (dash == std::string::npos) throw std::runtime_error("--depth-range needs FROM-TO in metres, e.g. 0-200");
+        o.d.rangeMin = numOf(opt, v.substr(0, dash)); o.d.rangeMax = numOf(opt, v.substr(dash + 1));
+        if (o.d.rangeMin > o.d.rangeMax) std::swap(o.d.rangeMin, o.d.rangeMax);
+        if (o.d.rangeMax - o.d.rangeMin < 0.1) throw std::runtime_error("--depth-range needs two different depths, e.g. 0-200");
+      }
+      else if (a[i] == "--palette") o.d.palette = Lower(val());
+      else if (a[i] == "--hillshade") {
+        const std::string opt = a[i]; const double h = numOf(opt, val());
+        if (h < 0 || h > 100) throw std::runtime_error("--hillshade must be 0 to 100");
+        o.d.hillshade = h / 100;
+      }
+      else if (a[i] == "--relief") o.d.relief = positive();
+      else if (a[i] == "--hide-above-water") o.d.showAboveWater = false;
+      else if (a[i] == "--contours") o.contours = Lower(val());
+      else if (a[i] == "--contours-only") { o.imagery = false; if (o.contours == "off") o.contours = "auto"; }
       else if (a[i] == "--bands" || a[i] == "--colours" || a[i] == "--colors") {
         const std::string v = val();
         navPreset = v == "navionics";
@@ -706,6 +780,10 @@ int main(int argc, char** argv) {
                                  " DEM), not a picture.\n  Converting it as satellite imagery would show meaningless colours. Use vector depth\n"
                                  "  MBTiles (contours / depth areas) or a shaded bathymetry image instead, or add --as-image\n"
                                  "  to convert the raw tiles anyway.");
+    }
+    {
+      const std::string ext = Lower(fs::path(o.input).extension().string());
+      if (!o.asImage && (ext == ".tif" || ext == ".tiff") && depth::IsDepthTiff(o.input)) return ConvertDepth(o);
     }
     return Convert(o);
   } catch (const std::exception& e) {

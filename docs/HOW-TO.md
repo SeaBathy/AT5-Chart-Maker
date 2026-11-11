@@ -65,6 +65,20 @@ The window has three steps:
 | **Detail file name** | The main chart file's name (`Large`, as Insight Map Creator names it). Leave it unless you know you need another. |
 | **Contour lines in Preview** | Draws the lines in the Preview picture. With dense 1 m contours they can hide the colours, so it's off by default. |
 
+### Depth surveys
+
+A GeoTIFF of depths (for example from BathyPicker) becomes a coloured, shaded depth picture, with contour lines on top if you like.
+
+| Setting | What it does |
+|---|---|
+| **Colours** | **Spectrum** (red in the shallows through yellow and green to deep blue; shows the most detail), **Lagoon**, **Thermal**, **Chart blues** or **Grey**. |
+| **Depth range** | The depths the colours are spread over, for example `0-200`. Deeper water shows in the deepest colour. A small range (say `0-30`) shows reefs and shallows in much more detail; a big one (`0-2000`) shows the whole drop-off. Empty = automatic, from 0 to about the deepest water in the survey. |
+| **Hillshade** | Shading from the north-west that makes the seabed look 3D: Off, Light, Medium (recommended) or Strong. |
+| **Also make contour lines every** | Ticked: contour lines, labelled with their depth, as a depth chart in the same folder. Type a spacing in metres (`5`), a list of depths (`2,5,10,20,50`), or leave it empty for automatic. |
+| **Coastline** | Land drawn with the contour lines, as for depth charts. |
+
+On the plotter, the picture is the **Imagery / Shaded relief** overlay and the contour lines are the chart, so you can show either or both.
+
 ### Pictures
 
 Picture maps keep their own colours, so there is one setting:
@@ -102,6 +116,7 @@ If something goes wrong, the status line turns red, and the messages underneath 
 
 | Your file | Becomes |
 |---|---|
+| **Depth GeoTIFF** (`.tif` of depths or heights, for example from BathyPicker) | A coloured, shaded depth picture (imagery layer) + contour lines (`Large.at5` / `Medium.at5`) if ticked |
 | **Vector MBTiles** with contour lines and/or depth areas | A coloured depth chart: `Large.at5` (detail) + `Medium.at5` (zoomed-out overview) |
 | **Picture MBTiles** (jpg/png tiles), **GeoTIFF** (`.tif`), or **JPG/PNG + world file** (`.jgw` / `.pgw`) | The plotter's imagery layer: `_3DTexture_16.at5`, `_3DTexture_32.at5` … |
 

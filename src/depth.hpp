@@ -1,0 +1,46 @@
+// Depth GeoTIFFs (bathymetry surveys, BathyPicker files): single-band grids of depths or heights.
+//  - read: classic TIFF and BigTIFF, tiled or striped, uncompressed / LZW / Deflate / PackBits, with the
+//    integer and floating-point predictors; geographic, Web Mercator, UTM / MGA and Australian Albers grids
+//  - imagery: coloured by depth over a chosen range, with hillshade, as an imagery source for the texture writer
+//  - contours: contour lines every N metres, written as vector MBTiles for the vector chart writer
+#pragma once
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "sources.hpp"
+
+namespace depth {
+
+struct Options {
+  double rangeMin = 0, rangeMax = -1;   // colours spread over this depth range (m); rangeMax < 0 = automatic
+  std::string palette = "spectrum";     // spectrum, lagoon, thermal, chart, grey
+  double hillshade = 0.6;               // shading amount, 0 (flat colours) .. 1
+  double relief = 4;                    // shading exaggeration (how strongly slopes show)
+  bool showAboveWater = true;           // ground above chart datum (islands, drying reef) in a sand colour
+  int elevation = -1;                   // -1 auto, 1 values are heights (depth = -value), 0 values are depths
+  int crs = 0;                          // force an EPSG code (0 = from the GeoTIFF)
+};
+
+struct Grid;   // the loaded depth grid (depths in metres, positive down)
+
+// Is this a depth GeoTIFF (one band of 16/32/64-bit numbers) rather than a picture?
+bool IsDepthTiff(const std::string& path);
+
+// Reads the grid. Prints what it found. Throws with a readable message for unsupported files.
+std::shared_ptr<Grid> Load(const std::string& path, const Options& o);
+
+// Imagery source: the depth grid coloured and shaded, for the texture (imagery) writer.
+std::unique_ptr<src::Source> MakeImagery(std::shared_ptr<Grid> g, const Options& o);
+
+// Contour levels: "auto", a spacing ("5") or a list ("2,5,10,20,50"). Empty result = no contours.
+std::vector<double> ContourLevels(const Grid& g, const std::string& spec);
+
+// Writes contour lines at the given depths as vector MBTiles (layer "contours", attribute "depth" in metres).
+// Returns the number of lines written.
+size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& mbtiles);
+
+// The automatic colour range, for messages: 0 .. a round depth just below the deepest 2 % of the data.
+double AutoRangeMax(const Grid& g);
+
+}  // namespace depth
