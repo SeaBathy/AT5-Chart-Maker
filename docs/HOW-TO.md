@@ -74,7 +74,7 @@ A GeoTIFF of depths (for example from BathyPicker) becomes a coloured, shaded de
 | **Colours** | **Spectrum** (red in the shallows through yellow and green to deep blue; shows the most detail), **Lagoon**, **Thermal**, **Chart blues** or **Grey**. |
 | **Depth range** | The depths the colours are spread over, for example `0-200`. Deeper water shows in the deepest colour. A small range (say `0-30`) shows reefs and shallows in much more detail; a big one (`0-2000`) shows the whole drop-off. Empty = automatic, from 0 to about the deepest water in the survey. |
 | **Hillshade** | Shading from the north-west that makes the seabed look 3D: Off, Light, Medium (recommended) or Strong. |
-| **Also make contour lines every** | Ticked: contour lines, labelled with their depth, as a depth chart in the same folder. Type a spacing in metres (`5`), a list of depths (`2,5,10,20,50`), or leave it empty for automatic. |
+| **Also make contour lines every** | Ticked: contour lines, labelled with their depth, as a depth chart in the same folder. Type a spacing in metres (`5`), a list of depths (`2,5,10,20,50`), or leave it empty for automatic. A spacing is used in the shallows and widens by itself in deep water (5 m past 50 m, 10 m past 200 m, 50 m past 500 m, 100 m past 1000 m), like a paper chart. |
 | **Coastline** | Land drawn with the contour lines, as for depth charts. |
 
 With contour lines ticked, the lines are drawn into the picture too, so they show with the photo overlay on. They also come as a depth chart (labelled lines, coloured water) for when the overlay is off.

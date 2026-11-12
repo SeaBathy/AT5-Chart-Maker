@@ -26,6 +26,8 @@ Free, works offline.</p>
 
 > **Not for navigation.** These are home-made charts. Always carry official charts.
 
+**New here?** The [how-to guide](https://seabathy.com/guide) shows the whole path in a few minutes: get a free depth file with BathyPicker, open it on your phone or PC, and put it on your chartplotter with AT5 Chart Maker.
+
 ## Download
 
 1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.3.2.zip`.
@@ -56,6 +58,8 @@ The program also has a step-by-step guide built in (**How to use**, top right). 
 Contour values can be depths (5, 10, 15) or heights (−5, −10, −15). It works out which on its own.
 
 ## Bathymetry charts on your sounder
+
+<p align="center"><img src="docs/images/13-survey-both-layers.webp" width="720" alt="Reefs on the central Great Barrier Reef made from one GeoTIFF: the shaded depth picture on the left, the contour chart on the right"></p>
 
 Have a high-detail depth survey? Put it on your plotter. Open the GeoTIFF straight in AT5 Chart
 Maker: for example one made with [BathyPicker](https://github.com/SeaBathy/BathyPicker) (10 m detail,
@@ -163,6 +167,7 @@ The code uses only what Windows already has: WIC for images, the built-in SQLite
 ## Credits and licences
 
 - **Code:** MIT licence ([LICENSE](LICENSE)).
+- **Example pictures** of reefs on the central Great Barrier Reef use IMAS bathymetry: Flukes, E. (2026), *Multi-resolution bathymetry composite surface for Australian waters*, IMAS, [doi:10.25959/Y9VF-V723](https://doi.org/10.25959/Y9VF-V723), CC BY 4.0.
 - **World coastline:** [GSHHG](https://www.soest.hawaii.edu/pwessel/gshhg/) 2.3.7, Wessel & Smith (University of Hawaii / NOAA), LGPL 3.
 - **Australian coastline:** [GEODATA COAST 100K 2004](https://pid.geoscience.gov.au/dataset/ga/61395), © Commonwealth of Australia (Geoscience Australia), CC BY 4.0.
 
