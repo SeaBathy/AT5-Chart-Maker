@@ -220,6 +220,7 @@ struct ConvertOpts {
   double finestMpp = 0, coarsestMpp = 8192;
   int zoom = -1, crs = 0, threads = 0;
   bool asImage = false;   // convert encoded-DEM raster MBTiles as plain imagery anyway
+  bool ignoreSpace = false;   // skip the free-disk-space check
   double splitMb = 450;
   vec::Options v;
   bool descSet = false;
@@ -311,6 +312,29 @@ int Convert(const ConvertOpts& o, std::unique_ptr<src::Source> given = nullptr) 
   int coarsest = std::clamp(ExpOf(o.coarsestMpp), finest, kTopExp);
   int threads = o.threads > 0 ? o.threads : int(std::max(1u, std::thread::hardware_concurrency()));
   printf("Levels: %s .. %s m/px (%d levels)\n", at5::LevelName(finest).c_str(), at5::LevelName(coarsest).c_str(), coarsest - finest + 1);
+  {
+    // Disk space: the finest level's tiles over the map's area (32 KB each), plus about a third for the coarser
+    // levels; the work files need about as much again while converting. Checked now, not 10 minutes in.
+    const double R = at5::kLowranceR;
+    const double w = (b.lonMax - b.lonMin) * kPi / 180 * R;
+    const double h = R * (std::log(std::tan(kPi / 4 + b.latMax * kPi / 360)) - std::log(std::tan(kPi / 4 + b.latMin * kPi / 360)));
+    const double tile = 256 * std::ldexp(1.0, finest);
+    const double need = (std::ceil(w / tile) + 1) * (std::ceil(h / tile) + 1) * 32768.0 * 4 / 3;
+    std::error_code ec;
+    fs::path probe = fs::absolute(o.outDir, ec);
+    while (!probe.empty() && !fs::exists(probe, ec) && probe.has_parent_path() && probe.parent_path() != probe) probe = probe.parent_path();
+    const auto sp = fs::space(probe, ec);
+    if (!ec) {
+      const double freeGb = double(sp.available) / 1e9, needGb = need / 1e9;
+      printf("  chart size: up to %.1f GB (plus about as much again while converting); %.1f GB free on that drive\n", needGb, freeGb);
+      if (need > double(sp.available) && !o.ignoreSpace)
+        throw std::runtime_error("not enough disk space: this chart needs up to " + std::to_string(int(std::ceil(needGb))) + " GB and the drive has " +
+                                 std::to_string(int(freeGb)) + " GB free.\n  Choose a coarser Detail (each step coarser is about 4x smaller), a smaller area,"
+                                 " or a Save to folder on a drive with more space. (--ignore-space converts anyway.)");
+      if (need * 2 > double(sp.available))
+        printf("  WARNING: the drive may fill up while converting (the work files need about as much space again)\n");
+    }
+  }
   fs::create_directories(o.outDir);
   fs::path tmp = fs::path(o.outDir) / "_sat2at5_tmp";
   fs::create_directories(tmp);
@@ -720,6 +744,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--areas-from-contours") o.v.areasFromContours = 1;
       else if (a[i] == "--no-areas-from-contours") o.v.areasFromContours = 0;
       else if (a[i] == "--as-image") o.asImage = true;
+      else if (a[i] == "--ignore-space") o.ignoreSpace = true;
       else if (a[i] == "--land") o.v.landFile = val();
       else if (a[i] == "--drying-height") { const std::string opt = a[i]; o.v.dryingHeight = numOf(opt, val()); if (o.v.dryingHeight < 0) throw std::runtime_error(opt + " must be 0 or more"); }
       else if (a[i] == "--major-contours") o.v.majorContourEvery = positive();

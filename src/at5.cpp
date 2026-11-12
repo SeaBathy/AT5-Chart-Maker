@@ -254,7 +254,7 @@ uint64_t WriteTextureFile(const std::string& path, int exp, bool top, const std:
 
   std::vector<uint8_t> buf;
   buf.reserve(1 << 22);
-  auto flush = [&] { if (!buf.empty() && fwrite(buf.data(), 1, buf.size(), out) != buf.size()) throw std::runtime_error("write failed"); buf.clear(); };
+  auto flush = [&] { if (!buf.empty() && fwrite(buf.data(), 1, buf.size(), out) != buf.size()) throw std::runtime_error("writing the chart file failed - the drive is probably full (free some space or choose a Save to folder on another drive)"); buf.clear(); };
   PutBytes(buf, hdr.data(), hdr.size());
   PutBytes(buf, atlas.data(), atlas.size());
   PutBytes(buf, kSec58, sizeof kSec58);
@@ -327,7 +327,7 @@ uint64_t WriteBlocksFile(const std::string& path, const std::vector<uint8_t>& li
   Put16(hdr, 0); Put16(hdr, Crc16(atlas.data(), atlas.size()));
   for (int i = 0; i < 16; ++i) Put8(hdr, 0);
   std::vector<uint8_t> buf;
-  auto flush = [&] { if (!buf.empty() && fwrite(buf.data(), 1, buf.size(), out) != buf.size()) throw std::runtime_error("write failed"); buf.clear(); };
+  auto flush = [&] { if (!buf.empty() && fwrite(buf.data(), 1, buf.size(), out) != buf.size()) throw std::runtime_error("writing the chart file failed - the drive is probably full (free some space or choose a Save to folder on another drive)"); buf.clear(); };
   PutBytes(buf, hdr.data(), hdr.size()); PutBytes(buf, atlas.data(), atlas.size());
   PutBytes(buf, kSec58, sizeof kSec58); PutBytes(buf, lib.data(), lib.size()); PutBytes(buf, kSec68, sizeof kSec68);
   PutBytes(buf, idx.data(), idx.size());
@@ -338,7 +338,7 @@ uint64_t WriteBlocksFile(const std::string& path, const std::vector<uint8_t>& li
     for (uint64_t left = b.size; left;) {
       size_t n = size_t(std::min<uint64_t>(left, chunk.size()));
       if (fread(chunk.data(), 1, n, store) != n) throw std::runtime_error("block store read failed");
-      if (fwrite(chunk.data(), 1, n, out) != n) throw std::runtime_error("write failed");
+      if (fwrite(chunk.data(), 1, n, out) != n) throw std::runtime_error("writing the chart file failed - the drive is probably full (free some space or choose a Save to folder on another drive)");
       left -= n;
     }
   }
