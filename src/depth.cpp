@@ -505,10 +505,15 @@ std::shared_ptr<Grid> Load(const std::string& path, const Options& o) {
           for (int x = 0; x < bw; ++x)
             for (int b = 0; b < bytes; ++b) row[size_t(x) * size_t(bytes) + size_t(le ? bytes - 1 - b : b)] = tmp[size_t(b) * size_t(bw) + size_t(x)];
         }
+        // Predictor 2 on floating-point data (GDAL writes this): the raw 32/64-bit words are differenced as
+        // integers, so they are summed back before being read as floats.
+        uint64_t acc = 0;
+        const uint64_t wordMask = bytes == 8 ? ~0ull : (1ull << (8 * bytes)) - 1;
         for (int x = 0; x < bw; ++x) {
           const uint8_t* p = row + size_t(x) * size_t(bytes);
           uint64_t u = 0;
           for (int b = 0; b < bytes; ++b) u |= uint64_t(p[le ? b : bytes - 1 - b]) << (8 * b);
+          if (pred == 2 && fmt == 3) { acc = (x ? acc + u : u) & wordMask; u = acc; }
           double v;
           if (fmt == 3) { if (bytes == 4) { uint32_t u32 = uint32_t(u); float fl; memcpy(&fl, &u32, 4); v = fl; } else { memcpy(&v, &u, 8); } }
           else if (fmt == 2) v = bytes == 1 ? double(int8_t(u)) : bytes == 2 ? double(int16_t(u)) : double(int32_t(u));
@@ -695,14 +700,34 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
         base[0] = c[0]; base[1] = c[1]; base[2] = c[2];
       }
       double shade = 1;
-      if (amount > 0) {
+      const auto& lines = s.o_.pictureContours;
+      if (amount > 0 || !lines.empty()) {
         // slope of the seabed height (= -depth): x east, y north (rows run south)
         const float de = g.Sample(L, cx + 1, cy), dw = g.Sample(L, cx - 1, cy), dn = g.Sample(L, cx, cy - 1), ds = g.Sample(L, cx, cy + 1);
         const double hx = (Valid(de) && Valid(dw)) ? -(double(de) - double(dw)) / (2 * cellX) : 0;
         const double hy = (Valid(dn) && Valid(ds)) ? -(double(dn) - double(ds)) / (2 * cellY) : 0;
-        const double nx = -z * hx, nyy = -z * hy, len = std::sqrt(nx * nx + nyy * nyy + 1);
-        const double lit = std::max(0.0, (nx * lx + nyy * ly + lz) / len) / lz;   // 1 on flat ground
-        shade = 1 - amount + amount * std::min(lit, 1.6);
+        if (amount > 0) {
+          const double nx = -z * hx, nyy = -z * hy, len = std::sqrt(nx * nx + nyy * nyy + 1);
+          const double lit = std::max(0.0, (nx * lx + nyy * ly + lz) / len) / lz;   // 1 on flat ground
+          shade = 1 - amount + amount * std::min(lit, 1.6);
+        }
+        if (!lines.empty() && d >= 0) {
+          // Contour lines in the picture: a pixel lies on a line when the nearest contour depth is within about
+          // half a pixel's worth of depth change. Lines closer together than a few pixels are left out.
+          const double groundPerPixel = mpp * std::cos(lat[size_t(j)] * kDeg) * kA / kRl;
+          const double perPixel = std::hypot(hx, hy) * groundPerPixel;        // depth change across one pixel
+          auto it = std::lower_bound(lines.begin(), lines.end(), double(d));
+          double best = 1e30, gap = 1e30;
+          for (auto k = it == lines.begin() ? it : it - 1; k != lines.end() && k <= it; ++k) {
+            const double dist = std::fabs(*k - double(d));
+            if (dist < best) {
+              best = dist;
+              const double lo = k == lines.begin() ? 1e30 : *k - *(k - 1), hi = k + 1 == lines.end() ? 1e30 : *(k + 1) - *k;
+              gap = std::min(lo, hi);
+            }
+          }
+          if (perPixel > 1e-6 && gap > 4 * perPixel && best < 0.6 * perPixel) shade *= 0.45;
+        }
       }
       for (int c = 0; c < 3; ++c) px[c] = uint8_t(std::clamp(std::lround(base[c] * shade), 0L, 255L));
       px[3] = 255;
@@ -984,8 +1009,15 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0) {
   }
   double step;
   if (spec == "auto") {
+    // Close together in the shallows, wider apart in deep water (like a paper chart): every 1 m to 10 m for
+    // shallow surveys, then 2, 5, 10, 15, 20, 25, 30, 40, 50 ... 5000 m.
     const double r = AutoRangeMax(g);
-    step = r <= 20 ? 1 : r <= 50 ? 2 : r <= 100 ? 5 : r <= 250 ? 10 : r <= 500 ? 25 : r <= 1000 ? 50 : 100;
+    std::vector<double> nice = {2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 120, 150, 200, 250, 300, 400, 500,
+                                750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000};
+    if (r <= 30) { nice.clear(); for (int v = 1; v <= 30; ++v) nice.push_back(v); }
+    if (g.minDepth <= 0 && g.maxDepth > 0) out.push_back(0);
+    for (double v : nice) if (v >= lo && v <= hi) out.push_back(v);
+    return out;
   } else {
     size_t used = 0;
     try { step = std::stod(spec, &used); } catch (...) { used = 0; step = 0; }

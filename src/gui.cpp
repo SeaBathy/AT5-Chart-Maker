@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.2.1";
+static const wchar_t* kVersion = L"1.3";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
@@ -259,7 +259,9 @@ static const GuidePage kGuide[] = {
    L"Copy the whole output folder (for example \"Cairns_AT5\") onto the SD card. Rename the folder if you like, "
    L"but don't rename the files inside it.\n\n"
    L"Put the card in the plotter, and in the chart settings choose Lowrance / Insight as the chart source (not "
-   L"Navionics or C-MAP). For satellite or bathymetry pictures also turn on the Imagery / Shaded relief overlay.\n\n"
+   L"Navionics or C-MAP). For satellite or bathymetry pictures also turn on the photo layer: on Simrad, Chart "
+   L"options \x2192 Photo overlay \x2192 Full (\"Land only\" hides it over water); on Lowrance, Imagery or Shaded "
+   L"relief.\n\n"
    L"Several charts: give each chart its own folder on the card."},
   {L"Tips and fixes",
    L"\x2022  Nothing shows on the plotter: check the chart source is Lowrance / Insight and the card is FAT32. "
@@ -1196,8 +1198,8 @@ static void CreateControls() {
   gContours = Check(L"Also make contour lines every", ID_CONTOURS, true);
   gInterval = EditBox(ID_INTERVAL, L"auto"); lIntervalM = Label(L"m");
   HelpBtn(H_CONTOURS);
-  gBathyNote = Label(L"The picture becomes the plotter's imagery / shaded-relief layer and the contour lines a chart "
-                     L"on top, each switched on and off in the plotter's chart settings.");
+  gBathyNote = Label(L"Simrad: Chart options \x2192 Photo overlay \x2192 Full shows the picture, with the contour lines drawn in; the "
+                     L"contour chart (labels, coloured water) shows with the overlay off.");
   // 3  Make the chart
   gConvert = Btn(L"Convert", ID_CONVERT, BS_OWNERDRAW);
   gPreview = Btn(L"Preview", ID_PREVIEW);

@@ -77,7 +77,9 @@ A GeoTIFF of depths (for example from BathyPicker) becomes a coloured, shaded de
 | **Also make contour lines every** | Ticked: contour lines, labelled with their depth, as a depth chart in the same folder. Type a spacing in metres (`5`), a list of depths (`2,5,10,20,50`), or leave it empty for automatic. |
 | **Coastline** | Land drawn with the contour lines, as for depth charts. |
 
-On the plotter, the picture is the **Imagery / Shaded relief** overlay and the contour lines are the chart, so you can show either or both.
+With contour lines ticked, the lines are drawn into the picture too, so they show with the photo overlay on. They also come as a depth chart (labelled lines, coloured water) for when the overlay is off.
+
+On **Simrad** (NSS, NSO, GO …): **Chart options → Photo overlay → Full**. *Land only* hides the picture over water. **Photo transparency** lets the chart show through the picture.
 
 ### Pictures
 
@@ -106,7 +108,7 @@ If something goes wrong, the status line turns red, and the messages underneath 
 
 1. Copy the whole output folder (for example `Moreton Bay 5m contours_AT5`) onto the SD card. Rename the folder if you like, but **don't rename the files inside it**.
 2. Put the card in the plotter. In the chart settings, choose **Lowrance / Insight** as the chart source (not Navionics or C-MAP).
-3. For satellite or bathymetry pictures, also turn on the **Imagery / Shaded relief** overlay.
+3. For satellite or bathymetry pictures, also turn on the photo layer. On **Simrad** (NSS, NSO, GO …): **Chart options → Photo overlay → Full**. *Land only* hides the picture over water. **Photo transparency** lets the chart show through the picture. On Lowrance and older units it's **Imagery** or **Shaded relief**.
 
 **Several charts on one card:** give each chart its own folder. Or tick *Also put the name in the file names* before converting, and then charts can share a folder.
 

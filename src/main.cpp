@@ -229,6 +229,7 @@ struct ConvertOpts {
   depth::Options d;
   std::string contours = "off";   // contour lines for the vector chart: off, auto, a spacing or a list
   bool imagery = true;            // the coloured, shaded picture (imagery layer)
+  bool pictureContours = true;    // with --contours, also draw the lines into the picture
 };
 
 std::string gNewOutDir;   // output folder this run created (removed again if the run fails and leaves it empty)
@@ -391,6 +392,7 @@ int ConvertDepth(ConvertOpts o) {
   auto grid = depth::Load(o.input, o.d);
   const auto levels = depth::ContourLevels(*grid, o.contours);
   if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
+  if (o.pictureContours) o.d.pictureContours = levels;   // the lines also go into the picture, so Photo overlay shows them
   if (o.imagery) {
     auto img = depth::MakeImagery(grid, o.d);
     // One level finer than the survey by default: colours and hillshade are worked out from the depth grid at
@@ -415,9 +417,8 @@ int ConvertDepth(ConvertOpts o) {
   if (n == 0) { printf("No contour lines fall inside this survey's depths - no depth chart made.\n"); return 0; }
   vec::Options v = o.v;
   v.elevation = false; v.elevationAuto = false;   // the contour file holds depths
-  // Lines only by default: the depth picture already colours the water, and filling between contour lines
-  // would have to guess beyond the survey's edge. --areas-from-contours fills it anyway.
-  if (v.areasFromContours < 0) v.areasFromContours = 0;
+  // The water between the contour lines is coloured (automatic, as for any contour chart): plotters draw chart
+  // areas without depth colours as land. --no-areas-from-contours makes a lines-only chart.
   if (!o.project.empty()) { v.name = o.project + "_" + v.name; v.overviewName = o.project + "_" + v.overviewName; }
   v.zoom = -1; v.threads = o.threads; v.splitMb = o.splitMb; v.desc = o.desc;
   return vec::Convert(tmp, o.outDir, v, TodayLong());
@@ -613,6 +614,8 @@ void Usage() {
       "      --contours S      also make the depth chart: S = a spacing in m (5), a list (2,5,10,20,50) or auto;\n"
       "                        uses the vector options above (--colours, --land, --safety-depth ...). Default off\n"
       "      --contours-only   make just the depth chart, not the picture\n"
+      "      --no-picture-contours  with --contours, keep the lines out of the picture (they're drawn into it by default,\n"
+      "                        so the plotter's Photo overlay shows them too)\n"
       "      --elevation / --no-elevation   values are heights / depths (default: detected)\n"
       "      --as-image        treat the file as an ordinary picture instead\n\n"
       "  sat2at5 verify <file.at5|folder>... [-v]   check headers, checksums, keys and tile structure\n"
@@ -716,6 +719,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--hide-above-water") o.d.showAboveWater = false;
       else if (a[i] == "--contours") o.contours = Lower(val());
       else if (a[i] == "--contours-only") { o.imagery = false; if (o.contours == "off") o.contours = "auto"; }
+      else if (a[i] == "--no-picture-contours") o.pictureContours = false;
       else if (a[i] == "--bands" || a[i] == "--colours" || a[i] == "--colors") {
         const std::string v = val();
         navPreset = v == "navionics";

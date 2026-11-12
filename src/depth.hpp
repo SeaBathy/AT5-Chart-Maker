@@ -20,6 +20,7 @@ struct Options {
   bool showAboveWater = true;           // ground above chart datum (islands, drying reef) in a sand colour
   int elevation = -1;                   // -1 auto, 1 values are heights (depth = -value), 0 values are depths
   int crs = 0;                          // force an EPSG code (0 = from the GeoTIFF)
+  std::vector<double> pictureContours;  // contour depths drawn into the picture itself (empty = none)
 };
 
 struct Grid;   // the loaded depth grid (depths in metres, positive down)

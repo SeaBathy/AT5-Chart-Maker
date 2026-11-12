@@ -45,7 +45,8 @@ PUTTING IT ON THE PLOTTER
      Don't rename the files inside it. Renaming the folder is fine.
   2. Put the card in the plotter. In the chart settings choose Lowrance / Insight as the chart
      source (not Navionics or C-MAP).
-  3. For satellite or bathymetry pictures, also turn on the Imagery / Shaded relief overlay.
+  3. For satellite or bathymetry pictures, also turn on the photo layer. Simrad: Chart options ->
+     Photo overlay -> Full ("Land only" hides it over water). Lowrance: Imagery / Shaded relief.
 
   If nothing shows: some older units only read files at the top of the card. Copy the .at5 files
   themselves (not the folder) to the top of the card instead. Try a small chart first.

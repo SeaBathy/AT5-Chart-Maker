@@ -6,7 +6,7 @@
 Free, works offline.</p>
 
 <p align="center">
-  <img alt="Version 1.2.1" src="https://img.shields.io/badge/version-1.2.1-0f766e">
+  <img alt="Version 1.3" src="https://img.shields.io/badge/version-1.3-0f766e">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
@@ -28,7 +28,7 @@ Free, works offline.</p>
 
 ## Download
 
-1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.2.1.zip`.
+1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.3.zip`.
 2. Unzip it anywhere and open the folder.
 3. Double-click **`AT5 Chart Maker.exe`**.
 
@@ -65,7 +65,7 @@ anywhere in Australian waters) or downloaded from a survey portal. It is recogni
 | | |
 |---|---|
 | **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how much **hillshade**. A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
-| **Contour lines** every few metres (or at depths you list), labelled with their depth, as a depth chart on top. Switch the picture and the lines on and off separately on the plotter. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
+| **Contour lines** close together in the shallows (2, 5, 10, 15, 20 …) or at depths you list. They're drawn into the picture, so they show with the photo overlay on, and also come as a depth chart with labels and coloured water for when it's off. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
 
 The picture is made one step sharper than the survey itself, so zooming in on the plotter stays smooth; **Detail** sets it finer still (for example 1 m), with bigger files.
 
@@ -130,7 +130,8 @@ your phone or PC.
 
 ## On the plotter
 
-- **Chart source:** in the chart settings, choose **Lowrance / Insight** (not Navionics or C-MAP). For pictures, also turn on the **Imagery / Shaded relief** overlay.
+- **Chart source:** in the chart settings, choose **Lowrance / Insight** (not Navionics or C-MAP), or your chart's name.
+- **Pictures** (satellite or depth pictures) are the plotter's photo / imagery layer. On **Simrad** (NSS, NSO, GO …): **Chart options → Photo overlay → Full**. *Land only* hides the picture over water. **Photo transparency** lets the chart show through the picture. On Lowrance and older units the setting is called **Imagery** or **Shaded relief**.
 - **SD card:** FAT32, 32 GB or smaller. Newer units are reported to read bigger cards formatted NTFS; exFAT is reported not to work.
 - **Several charts:** give each chart its own folder on the card. Or tick **Also put the name in the file names** before converting, and then charts can share a folder.
 - **Nothing shows?** Some older units only read files at the top of the card: copy the `.at5` files themselves (not the folder) to the top. Try a small chart first.
