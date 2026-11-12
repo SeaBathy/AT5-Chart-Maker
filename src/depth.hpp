@@ -35,7 +35,8 @@ std::shared_ptr<Grid> Load(const std::string& path, const Options& o);
 std::unique_ptr<src::Source> MakeImagery(std::shared_ptr<Grid> g, const Options& o);
 
 // Contour levels: "auto", a spacing ("5") or a list ("2,5,10,20,50"). Empty result = no contours.
-std::vector<double> ContourLevels(const Grid& g, const std::string& spec);
+// A spacing makes lines down to maxDepth (the colour range) only, so 1 m contours stay practical on deep surveys.
+std::vector<double> ContourLevels(const Grid& g, const std::string& spec, double maxDepth = 0);
 
 // Writes contour lines at the given depths as vector MBTiles (layer "contours", attribute "depth" in metres).
 // Returns the number of lines written.

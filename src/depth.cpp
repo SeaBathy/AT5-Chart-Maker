@@ -984,7 +984,7 @@ std::vector<uint8_t> EncodeTile(const TileLines& t) {
 
 std::unique_ptr<src::Source> MakeImagery(std::shared_ptr<Grid> g, const Options& o) { return std::make_unique<DepthImagery>(std::move(g), o); }
 
-std::vector<double> ContourLevels(const Grid& g, const std::string& spec0) {
+std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, double maxDepth) {
   std::string spec;
   for (char c : spec0) if (c != ' ') spec += c;
   std::vector<double> out;
@@ -1023,10 +1023,14 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0) {
     try { step = std::stod(spec, &used); } catch (...) { used = 0; step = 0; }
     if (used != spec.size() || !(step > 0)) throw std::runtime_error("--contours needs a spacing in metres (e.g. 5), a list (2,5,10,20), auto or off; got '" + spec0 + "'");
   }
+  const double top = maxDepth > 0 ? std::min(hi, maxDepth) : hi;
+  if (top < hi)
+    printf("  contour lines every %g m down to %g m (the colour depth range); deeper water has none\n", step, top);
   if (g.minDepth <= 0 && g.maxDepth > 0) out.push_back(0);   // the shoreline (chart datum)
-  for (double v = std::ceil(std::max(lo, step * 0.5) / step) * step; v <= hi; v += step) {
+  for (double v = std::ceil(std::max(lo, step * 0.5) / step) * step; v <= top; v += step) {
     out.push_back(v);
-    if (out.size() > 400) throw std::runtime_error("--contours " + spec + " makes too many lines for this survey; use a bigger spacing");
+    if (out.size() > 600)
+      throw std::runtime_error("--contours " + spec + " makes over 600 lines; use a bigger spacing or a smaller --depth-range");
   }
   return out;
 }

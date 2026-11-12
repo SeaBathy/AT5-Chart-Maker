@@ -6,7 +6,7 @@
 Free, works offline.</p>
 
 <p align="center">
-  <img alt="Version 1.3" src="https://img.shields.io/badge/version-1.3-0f766e">
+  <img alt="Version 1.3.1" src="https://img.shields.io/badge/version-1.3.1-0f766e">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
@@ -28,7 +28,7 @@ Free, works offline.</p>
 
 ## Download
 
-1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.3.zip`.
+1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.3.1.zip`.
 2. Unzip it anywhere and open the folder.
 3. Double-click **`AT5 Chart Maker.exe`**.
 

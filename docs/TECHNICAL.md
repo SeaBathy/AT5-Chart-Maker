@@ -92,7 +92,7 @@ GDA2020, WGS84) and Australian Albers (EPSG:3577, 9473). Other projections: re-p
 | `--relief N` | 4 | How strongly slopes show in the shading. |
 | `--finest M` | one level finer than the survey | Finest detail in m per pixel. The default doubles the survey's detail so zoomed-in views stay smooth. |
 | `--hide-above-water` | off | Leave ground above chart datum clear instead of sand-coloured. |
-| `--contours S` | off | Also make the contour-line chart: a spacing (`5`), a list (`2,5,10,20,50`) or `auto`. The vector options below apply (`--land`, `--colours`, `--safety-depth` …). |
+| `--contours S` | off | Also make the contour-line chart: a spacing (`5`; lines go down to the bottom of `--depth-range`), a list (`2,5,10,20,50`) or `auto` (2, 5, 10, 15, 20 … m). The vector options below apply (`--land`, `--colours`, `--safety-depth` …). |
 | `--contours-only` | off | Only the contour chart, no picture. |
 | `--elevation` / `--no-elevation` | detected | Values are heights / depths. |
 | `--as-image` | off | Treat the file as an ordinary picture. |

@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.3";
+static const wchar_t* kVersion = L"1.3.1";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,

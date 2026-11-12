@@ -390,7 +390,7 @@ int ConvertDepth(ConvertOpts o) {
   printf("Depth GeoTIFF: %s\n", o.input.c_str());
   o.d.crs = o.crs;
   auto grid = depth::Load(o.input, o.d);
-  const auto levels = depth::ContourLevels(*grid, o.contours);
+  const auto levels = depth::ContourLevels(*grid, o.contours, o.d.rangeMax > o.d.rangeMin ? o.d.rangeMax : depth::AutoRangeMax(*grid));
   if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
   if (o.pictureContours) o.d.pictureContours = levels;   // the lines also go into the picture, so Photo overlay shows them
   if (o.imagery) {
