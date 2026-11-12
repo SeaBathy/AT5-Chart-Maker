@@ -692,7 +692,8 @@ class DepthImagery : public src::Source {
       const double byArea = inRange ? cdf[size_t(i)] / double(inRange) : even;
       spread_[size_t(i)] = float(kEvenShare * even + (1 - kEvenShare) * byArea);
     }
-    printf("  colours: %s, %g .. %g m (deeper shows in the deepest colour), hillshade %d%%\n", pal->name, lo_, hi_, int(std::lround(o.hillshade * 100)));
+    if (o.hillshade <= 0) printf("  colours: %s, %g .. %g m (deeper shows in the deepest colour), no shading\n", pal->name, lo_, hi_);
+    else printf("  colours: %s, %g .. %g m (deeper shows in the deepest colour), shading %gx\n", pal->name, lo_, hi_, o.relief / 5 * o.hillshade);
     // native resolution in Lowrance-Mercator metres
     native_ = g_->cellMetres / std::cos(g_->centreLat * kDeg) * kRl / kA;
   }
@@ -734,7 +735,7 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
   const double lz = std::sqrt(0.5);
   struct Light { double x, y, weight; };
   const double r = std::sqrt(0.5) * std::sqrt(0.5);   // horizontal part of a 45-degree light, split on a diagonal
-  const Light lights[4] = {{-r, r, 0.45}, {-std::sqrt(0.5), 0, 0.2}, {0, std::sqrt(0.5), 0.2}, {-r, -r, 0.15}};
+  const Light lights[4] = {{-r, r, 0.6}, {-std::sqrt(0.5), 0, 0.15}, {0, std::sqrt(0.5), 0.15}, {-r, -r, 0.1}};
   std::vector<double> lon(256), lat(256);
   for (int i = 0; i < 256; ++i) lon[size_t(i)] = (tx * 256 + i + 0.5) * mpp / kRl / kDeg;
   for (int j = 0; j < 256; ++j) lat[size_t(j)] = (2 * std::atan(std::exp((ty * 256 + j + 0.5) * mpp / kRl)) - kPi / 2) / kDeg;
@@ -782,9 +783,11 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
         }
         if (amount > 0) {
           const double nx = -z * hx, nyy = -z * hy, len = std::sqrt(nx * nx + nyy * nyy + 1);
-          double lit = 0;
-          for (const Light& l : lights) lit += l.weight * std::max(0.0, (nx * l.x + nyy * l.y + lz) / len) / lz;   // 1 on flat ground
-          shade = 1 - amount + amount * std::min(lit, 1.6);
+          // As the SeaBathy apps shade: dark slopes facing away from the light down to about 45 %, flat ground
+          // about as is, slopes facing the light a little brighter.
+          double lambert = 0;
+          for (const Light& l : lights) lambert += l.weight * std::max(0.0, (nx * l.x + nyy * l.y + lz) / len);
+          shade = 1 - amount + amount * std::min(1.15, 0.45 + 0.75 * lambert);
         }
         if (!lines.empty() && d >= 0) {
           // Contour lines in the picture: a pixel lies on a line when the nearest contour depth is within about

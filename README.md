@@ -6,7 +6,7 @@
 Free, works offline.</p>
 
 <p align="center">
-  <img alt="Version 1.4" src="https://img.shields.io/badge/version-1.4-0f766e">
+  <img alt="Version 1.4.1" src="https://img.shields.io/badge/version-1.4.1-0f766e">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
@@ -30,7 +30,7 @@ Free, works offline.</p>
 
 ## Download
 
-1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.4.zip`.
+1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.4.1.zip`.
 2. Unzip it anywhere and open the folder.
 3. Double-click **`AT5 Chart Maker.exe`**.
 
@@ -68,8 +68,8 @@ anywhere in Australian waters) or downloaded from a survey portal. It is recogni
 
 | | |
 |---|---|
-| **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how much **hillshade**. A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
-| **Contour lines** close together in the shallows (2, 5, 10, 15, 20 …) or at depths you list. They're drawn into the picture, so they show with the photo overlay on, and also come as a depth chart with labels and coloured water for when it's off. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
+| **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how strong the **hillshade** is (Off to 10x, the same scale as the SeaBathy apps). A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
+| **Contour lines** close together in the shallows (2, 5, 10, 15, 20 …), every metre if you type 1, or at depths you list. Zoomed out, the plotter shows the lines every 5 m; the ones in between appear as you zoom in. They're drawn into the picture, so they show with the photo overlay on, and also come as a depth chart with labels and coloured water for when it's off. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
 
 The picture is made one step sharper than the survey itself, so zooming in on the plotter stays smooth; **Detail** sets it finer still (for example 1 m), with bigger files.
 

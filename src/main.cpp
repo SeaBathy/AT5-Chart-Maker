@@ -608,8 +608,10 @@ void Usage() {
       "      --depth-range A-B  spread the colours over A..B m (default 0 .. about the deepest 2 %%); deeper water\n"
       "                        shows in the deepest colour. A small range shows the shallows in more detail\n"
       "      --palette P       spectrum (default), lagoon, thermal, chart or grey\n"
-      "      --hillshade N     shading amount 0 (flat colours) .. 100 (default 60)\n"
-      "      --relief N        how strongly slopes show in the shading (default 4)\n"
+      "      --shade X         shading strength, as in the SeaBathy apps: 0 (flat colours), 0.5, 1 (default), 2 .. 10\n"
+      "                        (stronger shows smaller bumps, darker)\n"
+      "      --hillshade N     older form: shading amount 0 .. 100 at the --relief strength\n"
+      "      --relief N        slope exaggeration for the shading (default 5, which is --shade 1)\n"
       "      --finest M        finest detail in m per pixel (default: one level finer than the survey, for smooth zooming)\n"
       "      --hide-above-water  leave ground above chart datum (islands, drying reef) clear instead of sand\n"
       "      --contours S      also make the depth chart: S = a spacing in m (5), a list (2,5,10,20,50) or auto;\n"
@@ -720,6 +722,12 @@ int main(int argc, char** argv) {
         o.d.hillshade = h / 100;
       }
       else if (a[i] == "--relief") o.d.relief = positive();
+      else if (a[i] == "--shade") {
+        const double x = num();
+        if (x < 0 || x > 10) throw std::runtime_error("--shade must be 0 to 10, e.g. 1 or 2.5");
+        o.d.relief = 5 * std::max(x, 0.01);
+        o.d.hillshade = x > 0 ? 1 : 0;
+      }
       else if (a[i] == "--hide-above-water") o.d.showAboveWater = false;
       else if (a[i] == "--contours") o.contours = Lower(val());
       else if (a[i] == "--contours-only") { o.imagery = false; if (o.contours == "off") o.contours = "auto"; }

@@ -73,7 +73,7 @@ sat2at5 photo.jpg -o out --crs 4326   (image + .jgw/.pgw/.tfw/.wld world file)
 ```
 sat2at5 survey.tif -o out                                   (coloured, shaded picture)
 sat2at5 survey.tif -o out --contours 5 --land auto          (picture + contour lines every 5 m)
-sat2at5 survey.tif -o out --depth-range 0-30 --palette lagoon --hillshade 80
+sat2at5 survey.tif -o out --depth-range 0-30 --palette lagoon --shade 2
 sat2at5 survey.tif -o out --contours 2,5,10,20,50 --contours-only
 ```
 
@@ -88,8 +88,9 @@ GDA2020, WGS84) and Australian Albers (EPSG:3577, 9473). Other projections: re-p
 |---|---|---|
 | `--depth-range A-B` | 0 … about the deepest 2 % | Depths the colours are spread over; deeper water shows in the deepest colour. |
 | `--palette P` | spectrum | spectrum, lagoon, thermal, chart or grey. |
-| `--hillshade N` | 60 | Shading amount, 0 (flat colours) … 100. Light from the north-west, 45° up. |
-| `--relief N` | 4 | How strongly slopes show in the shading. |
+| `--shade X` | 1 | Shading strength on the SeaBathy apps' scale: 0 (flat colours), 0.5, 1, 2 … 10. Light 45° up, mostly from the north-west (60 %), with the west, north (15 % each) and south-west (10 %). Dark slopes go down to about 45 % brightness, as in the apps. |
+| `--hillshade N` | 100 | Older form: how much of the shading is blended in, 0 … 100, at the `--relief` strength. |
+| `--relief N` | 5 | Slope exaggeration for the shading; 5 is `--shade 1`. |
 | `--finest M` | one level finer than the survey | Finest detail in m per pixel. The default doubles the survey's detail so zoomed-in views stay smooth. |
 | `--hide-above-water` | off | Leave ground above chart datum clear instead of sand-coloured. |
 | `--contours S` | off | Also make the contour-line chart: a spacing (`5`; used in the shallows and widened with depth, or the same everywhere down to `--depth-range` with `--fixed-contours`), a list (`2,5,10,20,50`) or `auto` (2, 5, 10, 15, 20 … m). The vector options below apply (`--land`, `--colours`, `--safety-depth` …). |

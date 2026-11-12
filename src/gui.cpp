@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.4";
+static const wchar_t* kVersion = L"1.4.1";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
@@ -124,13 +124,17 @@ static const Help kHelp[H_COUNT] = {
   {L"Hillshade", L"Shading that makes the seabed look 3D.",
    L"Light mostly from the north-west, with some from the west, north and south-west, shades the slopes, so "
    L"reefs, ridges and channels stand out whichever way they face.\n\n"
-   L"Off gives flat colours; Strong makes every bump show. Medium suits most surveys."},
+   L"The same strengths as the SeaBathy apps: Off gives flat colours, 1x shows the slopes as they are, and 2x "
+   L"to 10x make them steeper and darker, so smaller bumps and ledges show. 1x suits most surveys; try 2x to 4x "
+   L"for flat reef tops and sandy bottoms."},
   {L"Contour lines", L"Also makes a chart of depth contour lines.",
    L"Draws depth contour lines from the survey, with their depths written along them, as a separate depth "
    L"chart in the same folder. On the plotter you can show the coloured picture, the lines, or both: the "
    L"picture is the Imagery / Shaded relief overlay, the lines are the chart.\n\n"
-   L"Type the spacing in metres (for example 5), a list of depths (2,5,10,20,50), or leave it empty for "
-   L"automatic spacing.\n\nA spacing is used in the shallows and widens by itself in deep water (5 m past 50 m, 10 m past "
+   L"Type the spacing in metres (for example 5, or 1 for every metre), a list of depths (2,5,10,20,50), or leave "
+   L"it empty for automatic spacing (2, 5, 10, 15, 20 m ...).\n\n"
+   L"Zoomed out, the plotter shows only the lines every 5 m; the ones in between appear as you zoom in, so 1 m "
+   L"lines don't crowd the chart.\n\nA spacing is used in the shallows and widens by itself in deep water (5 m past 50 m, 10 m past "
    L"200 m, 50 m past 500 m, 100 m past 1000 m), like a paper chart, so fine contours stay quick and readable."},
 };
 
@@ -1032,10 +1036,10 @@ static void OnConvert() {
   if (!project.empty()) args += L" --project " + Q(project);
   if (gKindCode == 3) {   // depth survey
     static const wchar_t* palettes[] = {L"spectrum", L"lagoon", L"thermal", L"chart", L"grey"};
-    static const wchar_t* shades[] = {L"0", L"30", L"60", L"90"};
+    static const wchar_t* shades[] = {L"0", L"0.5", L"1", L"2", L"3", L"4", L"6", L"8", L"10"};
     const int pi = int(SendMessageW(gPalette, CB_GETCURSEL, 0, 0)), si = int(SendMessageW(gShade, CB_GETCURSEL, 0, 0));
     args += std::wstring(L" --palette ") + palettes[std::clamp(pi, 0, 4)];
-    args += std::wstring(L" --hillshade ") + shades[std::clamp(si, 0, 3)];
+    args += std::wstring(L" --shade ") + shades[std::clamp(si, 0, 8)];
     static const wchar_t* finestD[] = {nullptr, L"0.5", L"1", L"2", L"4", L"8", L"16"};
     const int fd = int(SendMessageW(gFinest, CB_GETCURSEL, 0, 0));
     if (fd > 0 && fd < 7) args += std::wstring(L" --finest ") + finestD[fd];
@@ -1196,7 +1200,7 @@ static void CreateControls() {
   lRange = Label(L"Depth range"); gRange = EditBox(ID_RANGE, L"auto"); lRangeM = Label(L"m");
   HelpBtn(H_RANGE);
   lShade = Label(L"Hillshade");
-  gShade = Combo(ID_SHADE, {L"Off", L"Light", L"Medium (recommended)", L"Strong"}, 2);
+  gShade = Combo(ID_SHADE, {L"Off", L"0.5x", L"1x (recommended)", L"2x", L"3x", L"4x", L"6x", L"8x", L"10x"}, 2);
   HelpBtn(H_SHADE);
   gContours = Check(L"Also make contour lines every", ID_CONTOURS, true);
   gInterval = EditBox(ID_INTERVAL, L"auto"); lIntervalM = Label(L"m");

@@ -15,8 +15,10 @@ namespace depth {
 struct Options {
   double rangeMin = 0, rangeMax = -1;   // colours spread over this depth range (m); rangeMax < 0 = automatic
   std::string palette = "spectrum";     // spectrum, lagoon, thermal, chart, grey
-  double hillshade = 0.6;               // shading amount, 0 (flat colours) .. 1
-  double relief = 4;                    // shading exaggeration (how strongly slopes show)
+  // Shading strength as in the SeaBathy apps: 0 = flat colours, 1x = the slopes as they are, 2x and up = steeper
+  // and darker. relief is the slope exaggeration (5 per 1x); hillshade blends the shading in (1 = fully).
+  double hillshade = 1;
+  double relief = 5;
   bool showAboveWater = true;           // ground above chart datum (islands, drying reef) in a sand colour
   int elevation = -1;                   // -1 auto, 1 values are heights (depth = -value), 0 values are depths
   int crs = 0;                          // force an EPSG code (0 = from the GeoTIFF)
