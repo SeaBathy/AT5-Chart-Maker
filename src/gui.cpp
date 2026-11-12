@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.3.1";
+static const wchar_t* kVersion = L"1.3.2";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
@@ -128,7 +128,8 @@ static const Help kHelp[H_COUNT] = {
    L"chart in the same folder. On the plotter you can show the coloured picture, the lines, or both: the "
    L"picture is the Imagery / Shaded relief overlay, the lines are the chart.\n\n"
    L"Type the spacing in metres (for example 5), a list of depths (2,5,10,20,50), or leave it empty for "
-   L"automatic spacing."},
+   L"automatic spacing.\n\nA spacing is used in the shallows and widens by itself in deep water (5 m past 50 m, 10 m past "
+   L"200 m, 50 m past 500 m, 100 m past 1000 m), like a paper chart, so fine contours stay quick and readable."},
 };
 
 // ---------------------------------------------------------------- state

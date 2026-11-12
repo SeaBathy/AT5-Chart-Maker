@@ -984,7 +984,7 @@ std::vector<uint8_t> EncodeTile(const TileLines& t) {
 
 std::unique_ptr<src::Source> MakeImagery(std::shared_ptr<Grid> g, const Options& o) { return std::make_unique<DepthImagery>(std::move(g), o); }
 
-std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, double maxDepth) {
+std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, double maxDepth, bool fixed) {
   std::string spec;
   for (char c : spec0) if (c != ' ') spec += c;
   std::vector<double> out;
@@ -1023,15 +1023,40 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, doubl
     try { step = std::stod(spec, &used); } catch (...) { used = 0; step = 0; }
     if (used != spec.size() || !(step > 0)) throw std::runtime_error("--contours needs a spacing in metres (e.g. 5), a list (2,5,10,20), auto or off; got '" + spec0 + "'");
   }
-  const double top = maxDepth > 0 ? std::min(hi, maxDepth) : hi;
-  if (top < hi)
-    printf("  contour lines every %g m down to %g m (the colour depth range); deeper water has none\n", step, top);
   if (g.minDepth <= 0 && g.maxDepth > 0) out.push_back(0);   // the shoreline (chart datum)
-  for (double v = std::ceil(std::max(lo, step * 0.5) / step) * step; v <= top; v += step) {
-    out.push_back(v);
-    if (out.size() > 600)
-      throw std::runtime_error("--contours " + spec + " makes over 600 lines; use a bigger spacing or a smaller --depth-range");
+  if (fixed) {
+    // The same spacing everywhere, down to the bottom of the colour depth range.
+    const double top = maxDepth > 0 ? std::min(hi, maxDepth) : hi;
+    if (top < hi) printf("  contour lines every %g m down to %g m (the colour depth range); deeper water has none\n", step, top);
+    for (double v = std::ceil(std::max(lo, step * 0.5) / step) * step; v <= top; v += step) {
+      out.push_back(v);
+      if (out.size() > 600)
+        throw std::runtime_error("--contours " + spec + " makes over 600 lines; use a bigger spacing or a smaller --depth-range");
+    }
+    return out;
   }
+  // Like a paper chart: the chosen spacing in the shallows, wider in deep water, where close lines only make a
+  // dark smear and a slow, huge chart. Never finer than asked for.
+  struct Band { double to, spacing; };
+  const Band bands[] = {{50, step}, {200, std::max(step, 5.0)}, {500, std::max(step, 10.0)}, {1000, std::max(step, 50.0)},
+                        {1e9, std::max(step, 100.0)}};
+  std::string summary;
+  double from = 0;
+  for (const Band& b : bands) {
+    if (from >= hi) break;
+    const double end = std::min(b.to, hi);
+    const size_t before = out.size();
+    for (double v = std::ceil(std::max({from, lo, b.spacing * 0.5}) / b.spacing) * b.spacing; v <= end + 1e-9; v += b.spacing)
+      if (v > from || from == 0) if (out.empty() || v > out.back()) out.push_back(v);
+    if (out.size() > before) {
+      char t[96];
+      snprintf(t, sizeof t, "%severy %g m to %g m", summary.empty() ? "" : ", ", b.spacing, end);
+      summary += t;
+    }
+    from = b.to;
+  }
+  printf("  contour lines: %s (%zu depths)\n", summary.c_str(), out.size());
+  if (out.size() > 600) throw std::runtime_error("--contours " + spec + " makes over 600 lines; use a bigger spacing");
   return out;
 }
 

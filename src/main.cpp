@@ -230,6 +230,7 @@ struct ConvertOpts {
   std::string contours = "off";   // contour lines for the vector chart: off, auto, a spacing or a list
   bool imagery = true;            // the coloured, shaded picture (imagery layer)
   bool pictureContours = true;    // with --contours, also draw the lines into the picture
+  bool fixedContours = false;     // the same contour spacing at every depth (down to the colour range)
 };
 
 std::string gNewOutDir;   // output folder this run created (removed again if the run fails and leaves it empty)
@@ -390,7 +391,7 @@ int ConvertDepth(ConvertOpts o) {
   printf("Depth GeoTIFF: %s\n", o.input.c_str());
   o.d.crs = o.crs;
   auto grid = depth::Load(o.input, o.d);
-  const auto levels = depth::ContourLevels(*grid, o.contours, o.d.rangeMax > o.d.rangeMin ? o.d.rangeMax : depth::AutoRangeMax(*grid));
+  const auto levels = depth::ContourLevels(*grid, o.contours, o.d.rangeMax > o.d.rangeMin ? o.d.rangeMax : depth::AutoRangeMax(*grid), o.fixedContours);
   if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
   if (o.pictureContours) o.d.pictureContours = levels;   // the lines also go into the picture, so Photo overlay shows them
   if (o.imagery) {
@@ -613,6 +614,9 @@ void Usage() {
       "      --hide-above-water  leave ground above chart datum (islands, drying reef) clear instead of sand\n"
       "      --contours S      also make the depth chart: S = a spacing in m (5), a list (2,5,10,20,50) or auto;\n"
       "                        uses the vector options above (--colours, --land, --safety-depth ...). Default off\n"
+      "                        A spacing applies in the shallows and widens in deep water (5 m past 50 m, 10 m past\n"
+      "                        200 m, 50 m past 500 m, 100 m past 1000 m), never finer than asked for\n"
+      "      --fixed-contours  the same spacing at every depth instead, down to the bottom of --depth-range\n"
       "      --contours-only   make just the depth chart, not the picture\n"
       "      --no-picture-contours  with --contours, keep the lines out of the picture (they're drawn into it by default,\n"
       "                        so the plotter's Photo overlay shows them too)\n"
@@ -720,6 +724,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--contours") o.contours = Lower(val());
       else if (a[i] == "--contours-only") { o.imagery = false; if (o.contours == "off") o.contours = "auto"; }
       else if (a[i] == "--no-picture-contours") o.pictureContours = false;
+      else if (a[i] == "--fixed-contours") o.fixedContours = true;
       else if (a[i] == "--bands" || a[i] == "--colours" || a[i] == "--colors") {
         const std::string v = val();
         navPreset = v == "navionics";
