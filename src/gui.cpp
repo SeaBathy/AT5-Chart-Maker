@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.3.2";
+static const wchar_t* kVersion = L"1.4";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
@@ -115,13 +115,15 @@ static const Help kHelp[H_COUNT] = {
    L"\x2022  Chart blues: the light blues of a paper chart.\n"
    L"\x2022  Grey: light (shallow) to dark (deep)."},
   {L"Depth range", L"Which depths the colours are spread over.",
-   L"The colours are spread over this range of depths, for example 0-200. Water deeper than the range shows "
-   L"in the deepest colour.\n\n"
+   L"The colours are spread over this range of depths, for example 0-200, with more of them where most of the "
+   L"seabed is, so a reef flat doesn't come out all one colour. Water deeper than the range shows in the "
+   L"deepest colour.\n\n"
    L"A small range (say 0-30) shows the reefs and shallows in much more detail. A big range (say 0-2000) "
    L"shows the whole drop-off, with fewer colours left for the shallows.\n\n"
    L"Leave it empty for automatic: from 0 to about the deepest water in the survey."},
   {L"Hillshade", L"Shading that makes the seabed look 3D.",
-   L"Light from the north-west shades the slopes, so reefs, ridges and channels stand out.\n\n"
+   L"Light mostly from the north-west, with some from the west, north and south-west, shades the slopes, so "
+   L"reefs, ridges and channels stand out whichever way they face.\n\n"
    L"Off gives flat colours; Strong makes every bump show. Medium suits most surveys."},
   {L"Contour lines", L"Also makes a chart of depth contour lines.",
    L"Draws depth contour lines from the survey, with their depths written along them, as a separate depth "

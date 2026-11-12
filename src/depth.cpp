@@ -353,6 +353,36 @@ struct Grid {
     }
     return wsum >= 0.5 ? float(sum / wsum) : kMissing;
   }
+  // Smooth (Catmull-Rom bicubic) depth: crisper than bilinear when the picture is finer than the survey, and
+  // it passes through every cell's own value. Falls back to bilinear near missing cells and edges.
+  float SampleCubic(int L, double cx, double cy) const {
+    const int W = lw[size_t(L)], H = lh[size_t(L)];
+    const double x0f = std::floor(cx), y0f = std::floor(cy);
+    const int x0 = int(x0f), y0 = int(y0f);
+    if (x0 < 1 || y0 < 1 || x0 + 2 >= W || y0 + 2 >= H) return Sample(L, cx, cy);
+    const double fx = cx - x0f, fy = cy - y0f;
+    auto weights = [](double t, double w[4]) {
+      const double t2 = t * t, t3 = t2 * t;
+      w[0] = -0.5 * t3 + t2 - 0.5 * t;
+      w[1] = 1.5 * t3 - 2.5 * t2 + 1;
+      w[2] = -1.5 * t3 + 2 * t2 + 0.5 * t;
+      w[3] = 0.5 * t3 - 0.5 * t2;
+    };
+    double wx[4], wy[4];
+    weights(fx, wx);
+    weights(fy, wy);
+    double sum = 0;
+    for (int j = 0; j < 4; ++j) {
+      double rowSum = 0;
+      for (int i = 0; i < 4; ++i) {
+        const float v = At(L, x0 - 1 + i, y0 - 1 + j);
+        if (!Valid(v)) return Sample(L, cx, cy);
+        rowSum += wx[i] * v;
+      }
+      sum += wy[j] * rowSum;
+    }
+    return float(sum);
+  }
 };
 
 namespace {
@@ -647,6 +677,21 @@ class DepthImagery : public src::Source {
     }
     lo_ = o.rangeMin;
     hi_ = o.rangeMax > o.rangeMin ? o.rangeMax : std::max(lo_ + 1, AutoRangeMax(*g_));
+    // Where in the colours each depth falls: part even, part by how much seabed sits at each depth, so a reef flat
+    // that's mostly 5-15 m deep gets several colours instead of one. The range still starts and ends the colours.
+    std::vector<double> cdf(kSpreadSteps + 1, 0.0);
+    size_t inRange = 0;
+    for (float v : g_->sample) {
+      if (v < lo_ || v > hi_) continue;
+      ++inRange;
+      cdf[size_t(std::lround((double(v) - lo_) / (hi_ - lo_) * kSpreadSteps))] += 1;
+    }
+    for (int i = 0; i <= kSpreadSteps; ++i) {
+      const double even = double(i) / kSpreadSteps;
+      if (i) cdf[size_t(i)] += cdf[size_t(i - 1)];
+      const double byArea = inRange ? cdf[size_t(i)] / double(inRange) : even;
+      spread_[size_t(i)] = float(kEvenShare * even + (1 - kEvenShare) * byArea);
+    }
     printf("  colours: %s, %g .. %g m (deeper shows in the deepest colour), hillshade %d%%\n", pal->name, lo_, hi_, int(std::lround(o.hillshade * 100)));
     // native resolution in Lowrance-Mercator metres
     native_ = g_->cellMetres / std::cos(g_->centreLat * kDeg) * kRl / kA;
@@ -656,9 +701,19 @@ class DepthImagery : public src::Source {
   std::string Describe() const override { return "depth GeoTIFF " + g_->path; }
   std::unique_ptr<src::Sampler> MakeSampler() override { return std::make_unique<DepthSampler>(this); }
 
+  // 0..1 depth position in the range -> 0..1 position in the palette (see the constructor)
+  double Spread(double t) const {
+    const double f = std::clamp(t, 0.0, 1.0) * kSpreadSteps;
+    const int k = std::min(int(f), kSpreadSteps - 1);
+    return spread_[size_t(k)] + (spread_[size_t(k + 1)] - spread_[size_t(k)]) * (f - k);
+  }
+
+  static constexpr int kSpreadSteps = 512;
+  static constexpr double kEvenShare = 0.55;
   std::shared_ptr<Grid> g_;
   Options o_;
   uint8_t lut_[256][3]{};
+  float spread_[kSpreadSteps + 1]{};
   double lo_ = 0, hi_ = 10, native_ = 1;
 };
 
@@ -674,8 +729,12 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
   g.proj.UnitMetres(latMid, ex, ny);
   const double cellX = std::hypot(g.a, g.d) * ex * double(1 << L), cellY = std::hypot(g.b, g.e) * ny * double(1 << L);
   const double z = s.o_.relief, amount = std::clamp(s.o_.hillshade, 0.0, 1.0);
-  // light from the north-west, 45 degrees up
-  const double lx = -0.5, ly = 0.5, lz = std::sqrt(0.5);
+  // Light from four directions, 45 degrees up (as in multi-directional hillshade): mostly the north-west, plus the
+  // west, north and south-west, so walls facing any way keep their shape instead of going flat.
+  const double lz = std::sqrt(0.5);
+  struct Light { double x, y, weight; };
+  const double r = std::sqrt(0.5) * std::sqrt(0.5);   // horizontal part of a 45-degree light, split on a diagonal
+  const Light lights[4] = {{-r, r, 0.45}, {-std::sqrt(0.5), 0, 0.2}, {0, std::sqrt(0.5), 0.2}, {-r, -r, 0.15}};
   std::vector<double> lon(256), lat(256);
   for (int i = 0; i < 256; ++i) lon[size_t(i)] = (tx * 256 + i + 0.5) * mpp / kRl / kDeg;
   for (int j = 0; j < 256; ++j) lat[size_t(j)] = (2 * std::atan(std::exp((ty * 256 + j + 0.5) * mpp / kRl)) - kPi / 2) / kDeg;
@@ -688,27 +747,43 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
       g.proj.FromLonLat(lon[size_t(i)], lat[size_t(j)], x, y);
       g.MapToPixel(x, y, col, r);
       const double cx = col * f - 0.5, cy = r * f - 0.5;
-      const float d = g.Sample(L, cx, cy);
-      if (!Valid(d)) { px[3] = 0; continue; }
+      if (!Valid(g.Sample(L, cx, cy))) { px[3] = 0; continue; }   // mostly missing here
+      const float d = g.SampleCubic(L, cx, cy);
       uint8_t base[3];
       if (d < 0 && s.lo_ >= 0) {
         if (!s.o_.showAboveWater) { px[3] = 0; continue; }
         base[0] = uint8_t(kAboveWater >> 16); base[1] = uint8_t(kAboveWater >> 8); base[2] = uint8_t(kAboveWater);
       } else {
-        const double t = std::clamp((double(d) - s.lo_) / (s.hi_ - s.lo_), 0.0, 1.0);
+        const double t = s.Spread((double(d) - s.lo_) / (s.hi_ - s.lo_));
         const auto& c = s.lut_[size_t(std::lround(t * 255))];
         base[0] = c[0]; base[1] = c[1]; base[2] = c[2];
       }
       double shade = 1;
       const auto& lines = s.o_.pictureContours;
       if (amount > 0 || !lines.empty()) {
-        // slope of the seabed height (= -depth): x east, y north (rows run south)
-        const float de = g.Sample(L, cx + 1, cy), dw = g.Sample(L, cx - 1, cy), dn = g.Sample(L, cx, cy - 1), ds = g.Sample(L, cx, cy + 1);
-        const double hx = (Valid(de) && Valid(dw)) ? -(double(de) - double(dw)) / (2 * cellX) : 0;
-        const double hy = (Valid(dn) && Valid(ds)) ? -(double(dn) - double(ds)) / (2 * cellY) : 0;
+        // Slope of the seabed height (= -depth): x east, y north (rows run south). Horn's method, as in GDAL's
+        // hillshade: all eight neighbours, weighted 1-2-1, which evens out survey speckle without softening real
+        // edges. Falls back to the four nearest where neighbours are missing.
+        float nb[3][3];
+        bool all = true;
+        for (int v = 0; v < 3; ++v)
+          for (int u = 0; u < 3; ++u) {
+            nb[v][u] = (u == 1 && v == 1) ? d : g.Sample(L, cx + u - 1, cy + v - 1);
+            all = all && Valid(nb[v][u]);
+          }
+        double hx, hy;
+        if (all) {
+          hx = -((nb[0][2] + 2.0 * nb[1][2] + nb[2][2]) - (nb[0][0] + 2.0 * nb[1][0] + nb[2][0])) / (8 * cellX);
+          hy = -((nb[0][0] + 2.0 * nb[0][1] + nb[0][2]) - (nb[2][0] + 2.0 * nb[2][1] + nb[2][2])) / (8 * cellY);
+        } else {
+          const float de = nb[1][2], dw = nb[1][0], dn = nb[0][1], ds = nb[2][1];
+          hx = (Valid(de) && Valid(dw)) ? -(double(de) - double(dw)) / (2 * cellX) : 0;
+          hy = (Valid(dn) && Valid(ds)) ? -(double(dn) - double(ds)) / (2 * cellY) : 0;
+        }
         if (amount > 0) {
           const double nx = -z * hx, nyy = -z * hy, len = std::sqrt(nx * nx + nyy * nyy + 1);
-          const double lit = std::max(0.0, (nx * lx + nyy * ly + lz) / len) / lz;   // 1 on flat ground
+          double lit = 0;
+          for (const Light& l : lights) lit += l.weight * std::max(0.0, (nx * l.x + nyy * l.y + lz) / len) / lz;   // 1 on flat ground
           shade = 1 - amount + amount * std::min(lit, 1.6);
         }
         if (!lines.empty() && d >= 0) {
