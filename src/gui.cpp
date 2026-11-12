@@ -90,8 +90,9 @@ static const Help kHelp[H_COUNT] = {
    L"When zoomed out, only every Nth metre of contour lines is shown, so the chart doesn't turn into a mess of "
    L"lines. Every 5 m by default. All lines show when you zoom in."},
   {L"Finer contours", L"When the in-between lines (e.g. 1 m) appear.",
-   L"When the finer contour lines (for example every 1 m) start to show as you zoom in. \"When zoomed in close\" "
-   L"matches Insight Map Creator."},
+   L"When the finer contour lines (for example every 1 m) start to show as you zoom in; the lines every 5 m always "
+   L"show. \"When zoomed in close\" matches Insight Map Creator; \"From medium zoom\" (the start for depth "
+   L"surveys) shows them sooner; \"Always\" shows every line at every zoom."},
   {L"Colour between contours", L"Builds coloured depth areas between the lines.",
    L"Most contour files only have lines. Automatic builds the coloured depth areas between the lines when the "
    L"file has none of its own.\n\nAlways builds them anyway; Never uses only the file's own depth areas."},
@@ -124,15 +125,17 @@ static const Help kHelp[H_COUNT] = {
   {L"Hillshade", L"Shading that makes the seabed look 3D.",
    L"Light mostly from the north-west, with some from the west, north and south-west, shades the slopes, so "
    L"reefs, ridges and channels stand out whichever way they face.\n\n"
-   L"The same strengths as the SeaBathy apps: Off gives flat colours, 1x shows the slopes as they are, and 2x "
-   L"to 10x make them steeper and darker, so smaller bumps and ledges show. 1x suits most surveys; try 2x to 4x "
+   L"The same scale as the SeaBathy apps: Off gives flat colours, 1x shows the slopes as they are, and 2x "
+   L"to 15x make them steeper and darker, so smaller bumps and ledges show. 1x suits most surveys; try 2x to 4x "
    L"for flat reef tops and sandy bottoms."},
   {L"Contour lines", L"Also makes a chart of depth contour lines.",
    L"Draws depth contour lines from the survey, with their depths written along them, as a separate depth "
    L"chart in the same folder. On the plotter you can show the coloured picture, the lines, or both: the "
    L"picture is the Imagery / Shaded relief overlay, the lines are the chart.\n\n"
-   L"Type the spacing in metres (for example 5, or 1 for every metre), a list of depths (2,5,10,20,50), or leave "
-   L"it empty for automatic spacing (2, 5, 10, 15, 20 m ...).\n\n"
+   L"Pick or type one number for a line every that many metres: 1 gives every metre, 5 every 5 m. auto gives "
+   L"2, 5, 10, 15, 20 m ... A list such as 2,5,10,20 gives lines at exactly those depths and no others.\n\n"
+   L"The water between the lines is coloured with the Chart colours: Navionics style gives a colour step at every "
+   L"line, so finer lines also mean more colour steps.\n\n"
    L"Zoomed out, the plotter shows only the lines every 5 m; the ones in between appear as you zoom in, so 1 m "
    L"lines don't crowd the chart.\n\nA spacing is used in the shallows and widens by itself in deep water (5 m past 50 m, 10 m past "
    L"200 m, 50 m past 500 m, 100 m past 1000 m), like a paper chart, so fine contours stay quick and readable."},
@@ -457,9 +460,9 @@ static int Layout(int W, int H) {
                                                 lShade, gShade, gHelpBtn[H_SHADE], gContours, gInterval, lIntervalM,
                                                 gHelpBtn[H_CONTOURS], gBathyNote};
   if (bathy) {
-    Hide({lStyle, gScheme, gHelpBtn[H_STYLE], lDeep, gDeep, lDeepM, gHelpBtn[H_DEEP], lDry, gDrying, lDryM, gHelpBtn[H_DRYING],
+    Hide({lDry, gDrying, lDryM, gHelpBtn[H_DRYING],
           lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
-          gHelpBtn[H_MAJOR], lFine, gFine, gHelpBtn[H_FINE], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
+          gHelpBtn[H_MAJOR], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
           gHelpBtn[H_BANDS], gOverview, gHelpBtn[H_OVERVIEW], lVName, gName, gHelpBtn[H_VNAME], gPvLines,
           gHelpBtn[H_PVLINES], gPicNote});
     label(lPalette, x0, y, LW);
@@ -486,9 +489,27 @@ static int Layout(int W, int H) {
     {
       int cx = x0;
       Put(gContours, cx, y + S(2), S(212), S(22)); cx += S(212);
-      Put(gInterval, cx, y, S(110), RH); cx += S(110) + S(4);
+      Put(gInterval, cx, y, S(110), S(200)); cx += S(110) + S(4);
       unit(lIntervalM, cx, y);
       help(H_CONTOURS, cx, y);
+    }
+    y += ROW;
+    // The contour chart's own look: colour steps between the lines, and when the in-between lines show.
+    {
+      const BOOL lines = SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED;
+      label(lStyle, x0, y, LW);
+      Put(gScheme, x0 + LW, y, S(230), S(300));
+      help(H_STYLE, x0 + LW + S(230) + G, y);
+      int cx = x0 + LW + S(230) + G + HB + S(28);
+      label(lDeep, cx, y, S(84)); cx += S(84);
+      Put(gDeep, cx, y, S(48), RH); cx += S(48) + S(4);
+      unit(lDeepM, cx, y);
+      help(H_DEEP, cx, y);
+      y += ROW;
+      label(lFine, x0, y, LW);
+      Put(gFine, x0 + LW, y, S(230), S(300));
+      help(H_FINE, x0 + LW + S(230) + G, y);
+      for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, lines);
     }
     y += ROW;
     label(lLand, x0, y, LW);
@@ -503,6 +524,7 @@ static int Layout(int W, int H) {
   } else if (depth) {
     Hide(bathyCtl);
     EnableWindow(gLand, TRUE); EnableWindow(gLandBrowse, TRUE);
+    for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, TRUE);
     label(lStyle, x0, y, LW);
     Put(gScheme, x0 + LW, y, S(230), S(300));
     help(H_STYLE, x0 + LW + S(230) + G, y);
@@ -765,7 +787,9 @@ static void OnKind(int code) {
       L"This file type isn't supported. Use .mbtiles, .tif, or .jpg/.png with a world file.",
       L"\x2713  Depth survey \x2013 becomes a coloured, shaded depth picture, with contour lines if you like",
   };
+  const int wasKind = gKindCode;
   gKindCode = code == 0 ? 0 : code == 1 ? 1 : code == 7 ? 3 : 2;
+  if (gKindCode != wasKind) SendMessageW(gFine, CB_SETCURSEL, gKindCode == 3 ? 1 : 0, 0);
   const bool good = code <= 1 || code == 7;
   if (good && Trim(GetText(gOut)).empty()) {
     const std::wstring in = Trim(GetText(gIn));
@@ -1036,10 +1060,10 @@ static void OnConvert() {
   if (!project.empty()) args += L" --project " + Q(project);
   if (gKindCode == 3) {   // depth survey
     static const wchar_t* palettes[] = {L"spectrum", L"lagoon", L"thermal", L"chart", L"grey"};
-    static const wchar_t* shades[] = {L"0", L"0.5", L"1", L"2", L"3", L"4", L"6", L"8", L"10"};
+    static const wchar_t* shades[] = {L"0", L"0.5", L"1", L"2", L"3", L"4", L"6", L"8", L"10", L"15"};
     const int pi = int(SendMessageW(gPalette, CB_GETCURSEL, 0, 0)), si = int(SendMessageW(gShade, CB_GETCURSEL, 0, 0));
     args += std::wstring(L" --palette ") + palettes[std::clamp(pi, 0, 4)];
-    args += std::wstring(L" --shade ") + shades[std::clamp(si, 0, 8)];
+    args += std::wstring(L" --shade ") + shades[std::clamp(si, 0, 9)];
     static const wchar_t* finestD[] = {nullptr, L"0.5", L"1", L"2", L"4", L"8", L"16"};
     const int fd = int(SendMessageW(gFinest, CB_GETCURSEL, 0, 0));
     if (fd > 0 && fd < 7) args += std::wstring(L" --finest ") + finestD[fd];
@@ -1053,6 +1077,15 @@ static void OnConvert() {
       std::wstring every;
       for (wchar_t c : Trim(GetText(gInterval))) if (c != L' ' && c != L'm') every += c;
       args += L" --contours " + Q(every.empty() ? std::wstring(L"auto") : every);
+      const int style = int(SendMessageW(gScheme, CB_GETCURSEL, 0, 0));
+      const std::wstring bands = style == 0 ? L"navionics" : style == 1 ? std::wstring(kBandsS52) : style == 2 ? L"gradient" : Trim(GetText(gBands));
+      if (bands.empty()) { InfoBox(L"Custom colours are empty", L"Custom colours are set under More settings when you open a contour file. Pick Navionics style, Paper chart or Soft blue for a depth survey."); return; }
+      args += L" --colours " + Q(bands);
+      const std::wstring deep = Trim(GetText(gDeep));
+      if ((bands == L"gradient" || bands == L"navionics") && !deep.empty()) args += L" --deep-depth " + Q(deep);
+      static const wchar_t* fineB[] = {L"close", L"medium", L"always", L"never"};
+      const int fb = int(SendMessageW(gFine, CB_GETCURSEL, 0, 0));
+      if (fb > 0 && fb < 4) args += std::wstring(L" --fine-contours ") + fineB[fb];
       const int landSel = int(SendMessageW(gLand, CB_GETCURSEL, 0, 0));
       std::wstring land = Trim(GetText(gLand));
       if (landSel == 0) land = L"auto";
@@ -1152,7 +1185,7 @@ static void CreateControls() {
   gProject = Check(L"Also put the name in the file names", ID_PROJECT, false);
   HelpBtn(H_PROJECT);
   // 2  Chart look (depth charts)
-  lStyle = Label(L"Colour style");
+  lStyle = Label(L"Chart colours");
   gScheme = Combo(ID_SCHEME, {L"Navionics style (recommended)", L"Paper chart (S-52)", L"Soft blue", L"Custom"}, 0);
   HelpBtn(H_STYLE);
   lDeep = Label(L"White from"); gDeep = EditBox(ID_DEEP); SetWindowTextW(gDeep, L"20"); lDeepM = Label(L"m");
@@ -1200,10 +1233,14 @@ static void CreateControls() {
   lRange = Label(L"Depth range"); gRange = EditBox(ID_RANGE, L"auto"); lRangeM = Label(L"m");
   HelpBtn(H_RANGE);
   lShade = Label(L"Hillshade");
-  gShade = Combo(ID_SHADE, {L"Off", L"0.5x", L"1x (recommended)", L"2x", L"3x", L"4x", L"6x", L"8x", L"10x"}, 2);
+  gShade = Combo(ID_SHADE, {L"Off", L"0.5x", L"1x (recommended)", L"2x", L"3x", L"4x", L"6x", L"8x", L"10x", L"15x"}, 2);
   HelpBtn(H_SHADE);
   gContours = Check(L"Also make contour lines every", ID_CONTOURS, true);
-  gInterval = EditBox(ID_INTERVAL, L"auto"); lIntervalM = Label(L"m");
+  // A drop-down you can also type in: a spacing, auto, or a list of depths.
+  gInterval = Make(L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWN | CBS_AUTOHSCROLL, ID_INTERVAL);
+  for (auto t : {L"auto", L"1", L"2", L"5", L"10"}) SendMessageW(gInterval, CB_ADDSTRING, 0, (LPARAM)t);
+  SendMessageW(gInterval, CB_SETCURSEL, 0, 0);
+  lIntervalM = Label(L"m");
   HelpBtn(H_CONTOURS);
   gBathyNote = Label(L"Simrad: Chart options \x2192 Photo overlay \x2192 Full shows the picture, with the contour lines drawn in; the "
                      L"contour chart (labels, coloured water) shows with the overlay off.");
@@ -1330,6 +1367,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case ID_CONTOURS: {   // contour lines on/off: the spacing and coastline only matter with lines
           const BOOL on = SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED;
           EnableWindow(gInterval, on);
+          for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, on);
           Relayout(true);
           break;
         }

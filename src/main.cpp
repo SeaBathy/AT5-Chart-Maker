@@ -608,7 +608,7 @@ void Usage() {
       "      --depth-range A-B  spread the colours over A..B m (default 0 .. about the deepest 2 %%); deeper water\n"
       "                        shows in the deepest colour. A small range shows the shallows in more detail\n"
       "      --palette P       spectrum (default), lagoon, thermal, chart or grey\n"
-      "      --shade X         shading strength, as in the SeaBathy apps: 0 (flat colours), 0.5, 1 (default), 2 .. 10\n"
+      "      --shade X         shading strength, as in the SeaBathy apps: 0 (flat colours), 0.5, 1 (default), 2 .. 20\n"
       "                        (stronger shows smaller bumps, darker)\n"
       "      --hillshade N     older form: shading amount 0 .. 100 at the --relief strength\n"
       "      --relief N        slope exaggeration for the shading (default 5, which is --shade 1)\n"
@@ -724,7 +724,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--relief") o.d.relief = positive();
       else if (a[i] == "--shade") {
         const double x = num();
-        if (x < 0 || x > 10) throw std::runtime_error("--shade must be 0 to 10, e.g. 1 or 2.5");
+        if (x < 0 || x > 20) throw std::runtime_error("--shade must be 0 to 20, e.g. 1 or 2.5");
         o.d.relief = 5 * std::max(x, 0.01);
         o.d.hillshade = x > 0 ? 1 : 0;
       }
