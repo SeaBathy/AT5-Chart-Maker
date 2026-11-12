@@ -19,7 +19,7 @@
 #pragma comment(lib, "user32.lib")
 
 static const wchar_t* kAppName = L"AT5 Chart Maker";
-static const wchar_t* kVersion = L"1.1";
+static const wchar_t* kVersion = L"1.2";
 
 enum {
   ID_IN = 100, ID_IN_BROWSE, ID_OUT, ID_OUT_BROWSE, ID_DESC, ID_PROJECT, ID_SCHEME, ID_DEEP, ID_LAND, ID_LAND_BROWSE,
@@ -82,8 +82,10 @@ static const Help kHelp[H_COUNT] = {
    L"Optional. A depth range to colour in a stand-out colour, for example 10-20 for a favourite fishing depth.\n\n"
    L"Leave it empty for none."},
   {L"Detail", L"How sharp the picture is when zoomed in.",
-   L"How much detail the chart keeps when you zoom right in. Auto uses the detail your file has, which is right "
-   L"for almost every file.\n\nChoosing finer than the file doesn't add detail; it only makes bigger files."},
+   L"How much detail the chart keeps when you zoom right in. For pictures, Auto uses the detail your file has. "
+   L"For depth surveys, Auto goes one step finer than the survey, so zooming in on the plotter stays smooth.\n\n"
+   L"A finer setting (for example 1 m) makes zoomed-in views smoother still, with much bigger files. It can't add "
+   L"survey detail that isn't there."},
   {L"Contours when zoomed out", L"Which lines show when zoomed out.",
    L"When zoomed out, only every Nth metre of contour lines is shown, so the chart doesn't turn into a mess of "
    L"lines. Every 5 m by default. All lines show when you zoom in."},
@@ -450,7 +452,7 @@ static int Layout(int W, int H) {
           lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
           gHelpBtn[H_MAJOR], lFine, gFine, gHelpBtn[H_FINE], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
           gHelpBtn[H_BANDS], gOverview, gHelpBtn[H_OVERVIEW], lVName, gName, gHelpBtn[H_VNAME], gPvLines,
-          gHelpBtn[H_PVLINES], lFinest, gFinest, gHelpBtn[H_FINEST], gPicNote});
+          gHelpBtn[H_PVLINES], gPicNote});
     label(lPalette, x0, y, LW);
     Put(gPalette, x0 + LW, y, S(230), S(300));
     help(H_PALETTE, x0 + LW + S(230) + G, y);
@@ -465,6 +467,12 @@ static int Layout(int W, int H) {
     label(lShade, x0, y, LW);
     Put(gShade, x0 + LW, y, S(230), S(300));
     help(H_SHADE, x0 + LW + S(230) + G, y);
+    {
+      int cx = x0 + LW + S(230) + G + HB + S(28);
+      label(lFinest, cx, y, S(84)); cx += S(84);
+      Put(gFinest, cx, y, std::max(S(120), right - HB - G - cx), S(300));
+      help(H_FINEST, right - HB, y);
+    }
     y += ROW;
     {
       int cx = x0;
@@ -1023,6 +1031,9 @@ static void OnConvert() {
     const int pi = int(SendMessageW(gPalette, CB_GETCURSEL, 0, 0)), si = int(SendMessageW(gShade, CB_GETCURSEL, 0, 0));
     args += std::wstring(L" --palette ") + palettes[std::clamp(pi, 0, 4)];
     args += std::wstring(L" --hillshade ") + shades[std::clamp(si, 0, 3)];
+    static const wchar_t* finestD[] = {nullptr, L"0.5", L"1", L"2", L"4", L"8", L"16"};
+    const int fd = int(SendMessageW(gFinest, CB_GETCURSEL, 0, 0));
+    if (fd > 0 && fd < 7) args += std::wstring(L" --finest ") + finestD[fd];
     std::wstring range;
     for (wchar_t c : Trim(GetText(gRange))) if (c != L' ' && c != L'm') range += c;
     if (!range.empty()) {

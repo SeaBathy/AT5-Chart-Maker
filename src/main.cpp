@@ -368,7 +368,11 @@ int ConvertDepth(ConvertOpts o) {
   const auto levels = depth::ContourLevels(*grid, o.contours);
   if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
   if (o.imagery) {
-    const int rc = Convert(o, depth::MakeImagery(grid, o.d));
+    auto img = depth::MakeImagery(grid, o.d);
+    // One level finer than the survey by default: colours and hillshade are worked out from the depth grid at
+    // every pixel, so zooming in on the plotter stays smooth instead of showing stretched blocks.
+    if (o.finestMpp <= 0) o.finestMpp = std::max(0.5, std::exp2(std::floor(std::log2(img->NativeMpp()) + 1e-9) - 1));
+    const int rc = Convert(o, std::move(img));
     if (rc) return rc;
   }
   if (levels.empty()) {
@@ -580,6 +584,7 @@ void Usage() {
       "      --palette P       spectrum (default), lagoon, thermal, chart or grey\n"
       "      --hillshade N     shading amount 0 (flat colours) .. 100 (default 60)\n"
       "      --relief N        how strongly slopes show in the shading (default 4)\n"
+      "      --finest M        finest detail in m per pixel (default: one level finer than the survey, for smooth zooming)\n"
       "      --hide-above-water  leave ground above chart datum (islands, drying reef) clear instead of sand\n"
       "      --contours S      also make the depth chart: S = a spacing in m (5), a list (2,5,10,20,50) or auto;\n"
       "                        uses the vector options above (--colours, --land, --safety-depth ...). Default off\n"

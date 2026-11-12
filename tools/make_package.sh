@@ -5,7 +5,7 @@
 #   sh tools/make_package.sh
 set -e
 SRC=$(cd "$(dirname "$0")/.." && pwd)
-VERSION=1.1
+VERSION=1.2
 DIST="$SRC/dist"
 OUT="$DIST/AT5 Chart Maker"
 for f in bin/sat2at5.exe bin/sat2at5_gui.exe coastlines/world_coast.land coastlines/australia_coast.land; do

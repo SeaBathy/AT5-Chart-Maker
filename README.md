@@ -6,7 +6,7 @@
 Free, works offline.</p>
 
 <p align="center">
-  <img alt="Version 1.1" src="https://img.shields.io/badge/version-1.1-0f766e">
+  <img alt="Version 1.2" src="https://img.shields.io/badge/version-1.2-0f766e">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
@@ -28,7 +28,7 @@ Free, works offline.</p>
 
 ## Download
 
-1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.1.zip`.
+1. Go to the **[Releases](../../releases)** page and download `AT5-Chart-Maker-1.2.zip`.
 2. Unzip it anywhere and open the folder.
 3. Double-click **`AT5 Chart Maker.exe`**.
 
@@ -66,6 +66,8 @@ anywhere in Australian waters) or downloaded from a survey portal. It is recogni
 |---|---|
 | **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how much **hillshade**. A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
 | **Contour lines** every few metres (or at depths you list), labelled with their depth, as a depth chart on top. Switch the picture and the lines on and off separately on the plotter. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
+
+The picture is made one step sharper than the survey itself, so zooming in on the plotter stays smooth; **Detail** sets it finer still (for example 1 m), with bigger files.
 
 Both examples are a reef in the central Great Barrier Reef (about 18.06°S 146.56°E), from a BathyPicker GeoTIFF. Most
 GeoTIFFs work: longitude/latitude, Web Mercator, UTM / MGA zones and Australian Albers; 16-bit,
