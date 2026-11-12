@@ -144,6 +144,8 @@ your phone or PC.
 
 **Is it safe?** It works offline and sends nothing anywhere. Each chart file stores only its own file name, the date and the chart name. Pick a neutral chart name before sharing charts.
 
+**Does it unlock paid charts?** No. It makes charts from your own files and maps only.
+
 **Which plotters?** Simrad, Lowrance and B&G units that read Insight / AT5 charts. The charts use Atlas version 12 with true-colour fills; units that don't support that may show different colours. Tested on a Simrad unit, where the charts load and show. Other models haven't been tried yet, so try a small chart on your own unit first.
 
 **Can it run from the command line?** Yes. `program\sat2at5.exe` does everything the window does, for batch jobs. See **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
