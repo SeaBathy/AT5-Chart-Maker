@@ -979,17 +979,52 @@ bool Inside(const RingP& r, const Pt& p) {
 // and the survey's edge; everything else cancels between neighbours. So the rings come out closed and oriented
 // (exteriors clockwise, holes anticlockwise, y down), no two of them lie on top of each other, and the contour
 // lines are the very same cuts, so lines and colour edges match point for point.
+// Memory: a point is only an id (which triangle side, which level); its position is worked out from the grid when
+// needed, and edges are joined by sorting, so a big survey with fine contours stays within a few hundred MB.
 struct PId {
   uint64_t a; uint32_t k;   // vertex id (k = ~0u), or an edge (a = side key) cut at level k
   bool operator==(const PId& o) const { return a == o.a && k == o.k; }
+  bool operator<(const PId& o) const { return a != o.a ? a < o.a : k < o.k; }
 };
-struct PIdHash { size_t operator()(const PId& p) const { return size_t(p.a * 0x9E3779B97F4A7C15ull ^ (uint64_t(p.k) << 1)); } };
+struct DEdge { PId from, to; };
+constexpr double kDetailTol = 0.05;   // see TriTrace
 struct TriOut {
   std::vector<std::vector<RingP>> bandRings;   // per band (levels.size() + 1 of them)
   std::vector<std::vector<RingP>> levelLines;  // per level
 };
 
-void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<double>& lv, bool wantAreas, TriOut& out) {
+// Joins directed edges into chains: open ones from their heads first, then the closed rings.
+template <class Emit>
+void JoinEdges(std::vector<DEdge>& E, Emit emit) {
+  if (E.empty()) return;
+  std::sort(E.begin(), E.end(), [](const DEdge& x, const DEdge& y) { return x.from < y.from; });
+  std::vector<PId> ends(E.size());
+  for (size_t i = 0; i < E.size(); ++i) ends[i] = E[i].to;
+  std::sort(ends.begin(), ends.end());
+  std::vector<char> used(E.size(), 0);
+  auto firstFrom = [&](const PId& p) {
+    return size_t(std::lower_bound(E.begin(), E.end(), p, [](const DEdge& e, const PId& q) { return e.from < q; }) - E.begin());
+  };
+  auto run = [&](size_t start) {
+    std::vector<PId> chain{E[start].from};
+    size_t cur = start;
+    for (;;) {
+      used[cur] = 1;
+      const PId nxt = E[cur].to;
+      chain.push_back(nxt);
+      size_t found = SIZE_MAX;
+      for (size_t j = firstFrom(nxt); j < E.size() && E[j].from == nxt; ++j) if (!used[j]) { found = j; break; }
+      if (found == SIZE_MAX) break;
+      cur = found;
+    }
+    emit(chain);
+  };
+  for (size_t i = 0; i < E.size(); ++i)   // heads: a start no edge ends at
+    if (!used[i] && !std::binary_search(ends.begin(), ends.end(), E[i].from)) run(i);
+  for (size_t i = 0; i < E.size(); ++i) if (!used[i]) run(i);
+}
+
+void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<double>& lv, bool wantAreas, double kTol, TriOut& out) {
   const size_t nLev = lv.size(), nBand = nLev + 1;
   // Levels nudged a hair deeper, so no depth in the data (centimetres) sits exactly on one: no zero-length pieces.
   std::vector<double> thr(nLev);
@@ -1000,63 +1035,78 @@ void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<doubl
   auto cellOk = [&](int x, int y) {
     return x >= 0 && y >= 0 && x + 1 < W && y + 1 < H && Valid(at(x, y)) && Valid(at(x + 1, y)) && Valid(at(x + 1, y + 1)) && Valid(at(x, y + 1));
   };
-  struct V { uint64_t id; double x, y, v; };
-  std::unordered_map<PId, Pt, PIdHash> pos;
-  std::vector<std::vector<std::pair<PId, PId>>> bandEdges(wantAreas ? nBand : 0);
-  std::vector<std::vector<std::pair<PId, PId>>> lineSegs(nLev);
-  struct Q { PId id; double x, y, v; int mask; };   // mask: triangle sides the point lies on (1 grid side, 2 B-C, 4 C-A)
+  // a vertex's position and depth, from its id
+  auto vtx = [&](uint64_t id, double& x, double& y, double& v) {
+    if (id < nCorner) { x = double(id % uint64_t(W)); y = double(id / uint64_t(W)); v = at(int(x), int(y)); return; }
+    const uint64_t r = id - nCorner;
+    const int cx = int(r % uint64_t(W - 1)), cy = int(r / uint64_t(W - 1));
+    x = cx + 0.5; y = cy + 0.5;
+    v = (double(at(cx, cy)) + at(cx + 1, cy) + at(cx + 1, cy + 1) + at(cx, cy + 1)) / 4;
+  };
+  auto posOf = [&](const PId& p) {
+    double x, y, v;
+    if (p.k == ~0u) { vtx(p.a, x, y, v); return Pt{x, y}; }
+    double x2, y2, v2;
+    vtx(p.a / NV, x, y, v);
+    vtx(p.a % NV, x2, y2, v2);
+    const double f = std::clamp((thr[p.k] - v) / (v2 - v), 0.0, 1.0);
+    return Pt{x + f * (x2 - x), y + f * (y2 - y)};
+  };
+  struct V { uint64_t id; double v; };
+  std::vector<std::vector<DEdge>> bandEdges(wantAreas ? nBand : 0);
+  std::vector<std::vector<DEdge>> lineEdges(wantAreas ? 0 : nLev);
+  struct Q { PId id; double v; int mask; };   // mask: triangle sides the point lies on (1 grid side, 2 B-C, 4 C-A)
   for (int y = 0; y + 1 < H; ++y)
     for (int x = 0; x + 1 < W; ++x) {
       if (!cellOk(x, y)) continue;
-      const V c[4] = {{uint64_t(y) * W + x, double(x), double(y), at(x, y)},
-                      {uint64_t(y) * W + x + 1, double(x + 1), double(y), at(x + 1, y)},
-                      {uint64_t(y + 1) * W + x + 1, double(x + 1), double(y + 1), at(x + 1, y + 1)},
-                      {uint64_t(y + 1) * W + x, double(x), double(y + 1), at(x, y + 1)}};
-      const V ctr{nCorner + uint64_t(y) * uint64_t(W - 1) + uint64_t(x), x + 0.5, y + 0.5, (c[0].v + c[1].v + c[2].v + c[3].v) / 4};
-      // the cell next to each grid side (top, right, bottom, left): the side is the survey's edge when it's missing
+      const V c[4] = {{uint64_t(y) * W + x, at(x, y)}, {uint64_t(y) * W + x + 1, at(x + 1, y)},
+                      {uint64_t(y + 1) * W + x + 1, at(x + 1, y + 1)}, {uint64_t(y + 1) * W + x, at(x, y + 1)}};
+      const V ctr{nCorner + uint64_t(y) * uint64_t(W - 1) + uint64_t(x), (c[0].v + c[1].v + c[2].v + c[3].v) / 4};
+      const double cmin = std::min({c[0].v, c[1].v, c[2].v, c[3].v}), cmax = std::max({c[0].v, c[1].v, c[2].v, c[3].v});
+      // a cell inside one band: no lines, and its area edges all cancel unless the cell is on the survey's edge
+      size_t cb0 = 0;
+      while (cb0 < nLev && thr[cb0] <= cmin) ++cb0;
+      const bool flat = cb0 == nLev || thr[cb0] > cmax;
       const bool edgeSide[4] = {!cellOk(x, y - 1), !cellOk(x + 1, y), !cellOk(x, y + 1), !cellOk(x - 1, y)};
+      if (flat && (!wantAreas || !(edgeSide[0] || edgeSide[1] || edgeSide[2] || edgeSide[3]))) continue;
       for (int t = 0; t < 4; ++t) {
         const V& A = c[t]; const V& B = c[(t + 1) % 4]; const V& C = ctr;   // clockwise with y down
         const double vmin = std::min({A.v, B.v, C.v}), vmax = std::max({A.v, B.v, C.v});
-        // the side's two vertices, by side bit
-        auto sideEnds = [&](int bit, const V*& p, const V*& q) {
+        auto cutPoint = [&](int bit, size_t k) {
+          const V *p, *q;
           if (bit == 1) { p = &A; q = &B; } else if (bit == 2) { p = &B; q = &C; } else { p = &C; q = &A; }
           if (q->id < p->id) std::swap(p, q);
+          return Q{PId{p->id * NV + q->id, uint32_t(k)}, thr[k], bit};
         };
-        auto cutPoint = [&](int bit, size_t k) {
-          const V *p, *q; sideEnds(bit, p, q);
-          const PId id{p->id * NV + q->id, uint32_t(k)};
-          auto it = pos.find(id);
-          if (it == pos.end()) {
-            const double f = std::clamp((thr[k] - p->v) / (q->v - p->v), 0.0, 1.0);
-            it = pos.emplace(id, Pt{p->x + f * (q->x - p->x), p->y + f * (q->y - p->y)}).first;
-          }
-          return Q{id, it->second.first, it->second.second, thr[k], bit};
-        };
-        auto vert = [&](const V& v, int mask) {
-          const PId id{v.id, ~0u};
-          pos.emplace(id, Pt{v.x, v.y});
-          return Q{id, v.x, v.y, v.v, mask};
-        };
-        // the bands this triangle reaches
-        size_t b0 = 0, b1 = 0;
+        size_t b0 = 0;
         while (b0 < nLev && thr[b0] <= vmin) ++b0;
-        b1 = b0;
+        size_t b1 = b0;
         while (b1 < nLev && thr[b1] <= vmax) ++b1;
-        // contour lines: one straight cut per level crossing the triangle
-        for (size_t k = b0; k < b1; ++k) {
-          std::vector<Q> pts;
+        if (!wantAreas) {
+          // contour lines: one straight cut per level crossing the triangle, deeper water on its right
           const V* vs[3] = {&A, &B, &C};
-          const int bits[3] = {1, 2, 4};   // side i joins vs[i] and vs[(i+1)%3]
-          for (int i = 0; i < 3; ++i) {
-            const double va = vs[i]->v, vb = vs[(i + 1) % 3]->v;
-            if ((va < thr[k]) != (vb < thr[k])) pts.push_back(cutPoint(bits[i], k));
+          const int bits[3] = {1, 2, 4};
+          for (size_t k = b0; k < b1; ++k) {
+            Q pts[2]; int n = 0; int deepSide = 0;
+            for (int i = 0; i < 3 && n < 2; ++i) {
+              const bool da = vs[i]->v >= thr[k], db = vs[(i + 1) % 3]->v >= thr[k];
+              if (da != db) { pts[n++] = cutPoint(bits[i], k); }
+            }
+            if (n != 2) continue;
+            // orientation: the triangle is clockwise; walking it, the cut leaves the deep part on its right when it
+            // runs from the side where the walk goes shallow -> deep to the side where it goes deep -> shallow
+            for (int i = 0; i < 3; ++i) {
+              const bool da = vs[i]->v >= thr[k], db = vs[(i + 1) % 3]->v >= thr[k];
+              if (!da && db) deepSide = bits[i];   // entering the deep part across this side
+            }
+            const Q& first = pts[0].mask == deepSide ? pts[1] : pts[0];
+            const Q& second = pts[0].mask == deepSide ? pts[0] : pts[1];
+            lineEdges[k].push_back({first.id, second.id});
           }
-          if (pts.size() == 2) lineSegs[k].push_back({pts[0].id, pts[1].id});
+          continue;
         }
-        if (!wantAreas) continue;
         for (size_t b = b0; b <= b1; ++b) {
-          std::vector<Q> poly = {vert(A, 1 | 4), vert(B, 1 | 2), vert(C, 2 | 4)};
+          std::vector<Q> poly = {{PId{A.id, ~0u}, A.v, 1 | 4}, {PId{B.id, ~0u}, B.v, 1 | 2}, {PId{C.id, ~0u}, C.v, 2 | 4}};
           // Sutherland-Hodgman against "at least the band's top level" and "shallower than its bottom level"
           for (int pass = 0; pass < 2; ++pass) {
             const bool lo = pass == 0;
@@ -1070,8 +1120,7 @@ void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<doubl
               if (kp) next.push_back(P);
               if (kp != kr) {
                 const int common = P.mask & R.mask;
-                const int bit = common & 1 ? 1 : common & 2 ? 2 : 4;
-                next.push_back(cutPoint(bit, k));
+                next.push_back(cutPoint(common & 1 ? 1 : common & 2 ? 2 : 4, k));
               }
             }
             poly = std::move(next);
@@ -1081,81 +1130,125 @@ void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<doubl
           for (size_t i = 0; i < poly.size(); ++i) {
             const Q& P = poly[i]; const Q& R = poly[(i + 1) % poly.size()];
             const int common = P.mask & R.mask;
-            if (common) {                                   // along a triangle side
-              if (!(common & 1) || !edgeSide[t]) continue;  // inside the survey: cancels with the neighbour
-            }
+            if (common && (!(common & 1) || !edgeSide[t])) continue;   // inside the survey: cancels with the neighbour
             bandEdges[b].push_back({P.id, R.id});
           }
         }
       }
     }
-  // join the lines (open at the survey's edge, closed elsewhere)
-  out.levelLines.assign(nLev, {});
-  for (size_t k = 0; k < nLev; ++k) {
-    auto& segs = lineSegs[k];
-    std::unordered_map<PId, std::vector<size_t>, PIdHash> ends;
-    for (size_t i = 0; i < segs.size(); ++i) { ends[segs[i].first].push_back(i); ends[segs[i].second].push_back(i); }
-    std::vector<char> used(segs.size(), 0);
-    auto follow = [&](size_t start, PId from) {
-      RingP pts{pos[from]};
-      size_t cur = start; PId atp = from;
-      for (;;) {
-        used[cur] = 1;
-        const PId nxt = segs[cur].first == atp ? segs[cur].second : segs[cur].first;
-        pts.push_back(pos[nxt]);
-        atp = nxt;
-        size_t found = SIZE_MAX;
-        for (size_t c2 : ends[nxt]) if (!used[c2]) { found = c2; break; }
-        if (found == SIZE_MAX) break;
-        cur = found;
+  // Simplifying, the same way for a line and for both areas on either side of it: every stretch of one contour
+  // between two fixed points (where it meets the survey's edge) is simplified once, in a fixed direction, so the
+  // three of them keep exactly the same points; a closed contour is started at a fixed point the same way.
+  // kTol, in grid cells: 0.05 (half a metre on a 10 m survey) for the detail chart, finer than its own 1 m units;
+  // 0 (none) for the overview, whose 80 m units would round thinned outlines onto each other
+  auto simplifyRun = [&](std::vector<PId> run) {   // keeps both ends
+    const bool flip = run.back() < run.front();
+    if (flip) std::reverse(run.begin(), run.end());
+    RingP pts; pts.reserve(run.size());
+    for (auto& p : run) pts.push_back(posOf(p));
+    std::vector<char> keep(pts.size(), 0);
+    keep.front() = keep.back() = 1;
+    std::vector<std::pair<size_t, size_t>> todo{{0, pts.size() - 1}};
+    while (!todo.empty()) {
+      auto [i, j] = todo.back(); todo.pop_back();
+      if (j <= i + 1) continue;
+      const double ax = pts[i].first, ay = pts[i].second, dx = pts[j].first - ax, dy = pts[j].second - ay;
+      const double len2 = dx * dx + dy * dy;
+      double best = -1; size_t bi = i;
+      for (size_t m = i + 1; m < j; ++m) {
+        double ex = pts[m].first - ax, ey = pts[m].second - ay, d;
+        if (len2 > 0) { const double t = std::clamp((ex * dx + ey * dy) / len2, 0.0, 1.0); ex -= t * dx; ey -= t * dy; }
+        d = ex * ex + ey * ey;
+        if (d > best) { best = d; bi = m; }
       }
-      out.levelLines[k].push_back(std::move(pts));
-    };
-    for (size_t i = 0; i < segs.size(); ++i)
-      if (!used[i]) {
-        if (ends[segs[i].first].size() == 1) follow(i, segs[i].first);
-        else if (ends[segs[i].second].size() == 1) follow(i, segs[i].second);
-      }
-    for (size_t i = 0; i < segs.size(); ++i) if (!used[i]) follow(i, segs[i].first);
+      if (best > kTol * kTol) { keep[bi] = 1; todo.push_back({i, bi}); todo.push_back({bi, j}); }
+    }
+    RingP o;
+    for (size_t m = 0; m < pts.size(); ++m) if (keep[m]) o.push_back(pts[m]);
+    if (flip) std::reverse(o.begin(), o.end());
+    return o;
+  };
+  // A ring of one contour only: started at its smallest point, in a fixed direction, split at its far point.
+  auto simplifyClosed = [&](std::vector<PId> r) {   // r without the closing repeat
+    const size_t n = r.size();
+    const size_t s0 = size_t(std::min_element(r.begin(), r.end()) - r.begin());
+    std::rotate(r.begin(), r.begin() + long(s0), r.end());
+    const bool flip = r[n - 1] < r[1];
+    if (flip) std::reverse(r.begin() + 1, r.end());
+    const Pt p0 = posOf(r[0]);
+    size_t farIdx = 1; double fd = -1;
+    for (size_t m = 1; m < n; ++m) { const Pt q = posOf(r[m]); const double d = (q.first - p0.first) * (q.first - p0.first) + (q.second - p0.second) * (q.second - p0.second); if (d > fd) { fd = d; farIdx = m; } }
+    std::vector<PId> a(r.begin(), r.begin() + long(farIdx) + 1), b(r.begin() + long(farIdx), r.end());
+    b.push_back(r[0]);
+    RingP o = simplifyRun(a), ob = simplifyRun(b);
+    o.insert(o.end(), ob.begin() + 1, ob.end() - 1);
+    if (flip) std::reverse(o.begin() + 1, o.end());   // back to the ring's own direction (from the same start)
+    return o;
+  };
+  auto isCut = [](const PId& p) { return p.k != ~0u; };
+  if (!wantAreas) {
+    out.levelLines.assign(nLev, {});
+    for (size_t k = 0; k < nLev; ++k) {
+      JoinEdges(lineEdges[k], [&](const std::vector<PId>& ch) {
+        if (ch.size() > 2 && ch.front() == ch.back()) {
+          RingP r = simplifyClosed(std::vector<PId>(ch.begin(), ch.end() - 1));
+          r.push_back(r.front());
+          out.levelLines[k].push_back(std::move(r));
+        } else {
+          out.levelLines[k].push_back(simplifyRun(ch));
+        }
+      });
+      std::vector<DEdge>().swap(lineEdges[k]);
+    }
+    return;
   }
-  if (!wantAreas) return;
-  // join each band's directed boundary edges into rings
   out.bandRings.assign(nBand, {});
   for (size_t b = 0; b < nBand; ++b) {
-    auto& E = bandEdges[b];
-    std::unordered_map<PId, std::vector<size_t>, PIdHash> from;
-    for (size_t i = 0; i < E.size(); ++i) from[E[i].first].push_back(i);
-    std::vector<char> used(E.size(), 0);
-    for (size_t i = 0; i < E.size(); ++i) {
-      if (used[i]) continue;
+    JoinEdges(bandEdges[b], [&](const std::vector<PId>& ch) {
+      std::vector<PId> r(ch.begin(), ch.end() - 1);   // the last repeats the first
+      const size_t n = r.size();
+      if (n < 3) return;
+      // fixed points: the survey's edge (grid vertices) and where one contour gives way to another
+      std::vector<size_t> anchors;
+      for (size_t i = 0; i < n; ++i) {
+        const PId& p = r[i]; const PId& prev = r[(i + n - 1) % n]; const PId& next = r[(i + 1) % n];
+        if (!isCut(p) || !isCut(prev) || !isCut(next) || prev.k != p.k || next.k != p.k) anchors.push_back(i);
+      }
       RingP ring;
-      size_t cur = i;
-      for (;;) {
-        used[cur] = 1;
-        ring.push_back(pos[E[cur].first]);
-        const PId nxt = E[cur].second;
-        size_t found = SIZE_MAX;
-        for (size_t c2 : from[nxt]) if (!used[c2]) { found = c2; break; }
-        if (found == SIZE_MAX) break;
-        cur = found;
+      if (anchors.empty()) {
+        ring = simplifyClosed(r);
+      } else {
+        for (size_t a = 0; a < anchors.size(); ++a) {
+          const size_t i = anchors[a], j = anchors[(a + 1) % anchors.size()];
+          std::vector<PId> run;
+          for (size_t m = i;; m = (m + 1) % n) { run.push_back(r[m]); if (m == j && run.size() > 1) break; if (anchors.size() == 1 && run.size() > n) break; }
+          const bool oneContour = run.size() > 2 && isCut(run.front()) && isCut(run.back()) && run.front().k == run.back().k &&
+                                  std::all_of(run.begin(), run.end(), [&](const PId& q) { return isCut(q) && q.k == run.front().k; });
+          RingP part = oneContour ? simplifyRun(run) : RingP{};
+          if (!oneContour) for (auto& q : run) part.push_back(posOf(q));
+          ring.insert(ring.end(), part.begin(), part.end() - 1);   // the run's end starts the next one
+        }
       }
       if (ring.size() >= 3 && std::fabs(Area2(ring)) > 1e-9) out.bandRings[b].push_back(std::move(ring));
-    }
+    });
+    std::vector<DEdge>().swap(bandEdges[b]);
   }
 }
 
 // The depth bands of grid level L, in global tile units at zoom z: each exterior with the holes inside it.
-std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>& levels) {
+std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>& levels, double dryTo = 0) {
   const int W = g.lw[size_t(L)], H = g.lh[size_t(L)];
   const auto s = Smoothed(g.levels[size_t(L)], W, H);
   std::vector<double> lv(levels.begin(), levels.end());
+  if (dryTo > 0 && std::find(lv.begin(), lv.end(), dryTo) == lv.end()) lv.push_back(dryTo);
   std::sort(lv.begin(), lv.end());
   TriOut tri;
-  TriTrace(s, W, H, lv, true, tri);
+  TriTrace(s, W, H, lv, true, L == 0 ? kDetailTol : 0.0, tri);
   std::vector<Poly> polys;
   for (size_t b = 0; b < tri.bandRings.size(); ++b) {
-    const double d1 = b == 0 ? std::min(double(g.minDepth), lv.empty() ? 0.0 : lv.front() - 1) : lv[b - 1];
-    const double d2 = b < lv.size() ? lv[b] : std::max(double(g.maxDepth), d1 + 1);
+    double d1 = b == 0 ? std::min(double(g.minDepth), lv.empty() ? 0.0 : lv.front() - 1) : lv[b - 1];
+    double d2 = b < lv.size() ? lv[b] : std::max(double(g.maxDepth), d1 + 1);
+    if (d2 <= 0 || (dryTo > 0 && d2 <= dryTo + 1e-9)) d1 = -1;   // dries at low tide: the plotter's drying (green) colour
     struct R { RingP pts; double minx, miny, maxx, maxy, area; };
     std::vector<R> ext, hol;
     for (auto& r : tri.bandRings[b]) {
@@ -1208,7 +1301,7 @@ std::vector<Line> LinesAt(const Grid& g, int L, int z, const std::vector<double>
   std::vector<double> lv(levels.begin(), levels.end());
   std::sort(lv.begin(), lv.end());
   TriOut tri;
-  TriTrace(s, W, H, lv, false, tri);
+  TriTrace(s, W, H, lv, false, L == 0 ? kDetailTol : 0.0, tri);
   const double world = 4096.0 * double(int64_t(1) << z), f = double(1 << L);
   std::vector<Line> out;
   for (size_t k = 0; k < lv.size(); ++k)
@@ -1222,8 +1315,7 @@ std::vector<Line> LinesAt(const Grid& g, int L, int z, const std::vector<double>
         lat = std::clamp(lat, -85.0, 85.0);
         ln.pts.push_back({(lon + 180) / 360 * world, (1 - std::log(std::tan(kPi / 4 + lat * kDeg / 2)) / kPi) / 2 * world});
       }
-      Simplify(ln.pts, 0.75);
-      if (ln.pts.size() >= 2) out.push_back(std::move(ln));
+      if (ln.pts.size() >= 2) out.push_back(std::move(ln));   // simplified already, the same way as the areas
     }
   return out;
 }
@@ -1538,7 +1630,7 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, doubl
   return out;
 }
 
-size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& path) {
+size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& path, double dryTo) {
   // detail zoom: about sixteen tile units per cell, so rounding to tile units never brings neighbouring contours
   // (and the area edges on them) together on steep walls; overview at zoom 9 from a coarser grid level
   const double cosLat = std::cos(g.centreLat * kDeg);
@@ -1551,7 +1643,7 @@ size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std
     lines = ls.size();
     AddToTiles(ls, zooms[zmax]);
     // the water between the lines, as depth areas worked out from the grid itself
-    AddAreasToTiles(AreasAt(g, 0, zmax, levels), zooms[zmax]);
+    AddAreasToTiles(AreasAt(g, 0, zmax, levels, dryTo), zooms[zmax]);
   }
   constexpr int kOverview = 9;
   if (zmax > kOverview) {
@@ -1563,7 +1655,7 @@ size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std
     for (double v : levels) if (std::fabs(v / 5 - std::round(v / 5)) < 1e-6) major.push_back(v);
     const auto& ov = major.size() >= 2 ? major : levels;
     AddToTiles(LinesAt(g, L, kOverview, ov), zooms[kOverview]);
-    AddAreasToTiles(AreasAt(g, L, kOverview, ov), zooms[kOverview]);
+    AddAreasToTiles(AreasAt(g, L, kOverview, ov, dryTo), zooms[kOverview]);
   }
   if (const char* chk = getenv("SAT2AT5_CHECK_AREAS"); chk && *chk == '1')
     for (auto& [z, tiles] : zooms) CheckAreas(tiles, z);

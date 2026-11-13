@@ -43,7 +43,8 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec, double
 
 // Writes contour lines at the given depths as vector MBTiles (layer "contours", attribute "depth" in metres).
 // Returns the number of lines written.
-size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& mbtiles);
+// dryTo > 0: water shallower than this is a drying area (green on the plotter), as it dries at low tide.
+size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& mbtiles, double dryTo = 0);
 
 // The automatic colour range, for messages: 0 .. a round depth just below the deepest 2 % of the data.
 double AutoRangeMax(const Grid& g);

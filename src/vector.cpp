@@ -285,6 +285,62 @@ std::vector<std::vector<Pt>> QuantizeArea(const Ring& r) {
   return loops;
 }
 
+// Last safety net for one area's rounded rings: where two of them cross (a thin band rounded onto its neighbour
+// on a steep wall, or in the zoomed-out chart's coarse units), the smaller one is dropped. At worst a sliver
+// loses its own colour (the neighbouring area covers it); a plotter can always fill what is left. Segments are
+// bucketed on a grid, so a big area with many holes is checked quickly.
+void DropCrossingRings(std::vector<std::vector<Pt>>& parts) {
+  if (parts.size() < 2) return;
+  struct Seg { Pt a, b; uint32_t ring; };
+  std::vector<Seg> segs;
+  int64_t x0 = INT64_MAX, y0 = INT64_MAX, x1 = INT64_MIN, y1 = INT64_MIN;
+  for (uint32_t r = 0; r < parts.size(); ++r)
+    for (size_t i = 0; i + 1 < parts[r].size(); ++i) {
+      const Pt& a = parts[r][i]; const Pt& b = parts[r][i + 1];
+      segs.push_back({a, b, r});
+      x0 = std::min({x0, a.x, b.x}); x1 = std::max({x1, a.x, b.x}); y0 = std::min({y0, a.y, b.y}); y1 = std::max({y1, a.y, b.y});
+    }
+  if (segs.empty()) return;
+  const double span = double(std::max<int64_t>({x1 - x0, y1 - y0, 1}));
+  const int G = int(std::clamp(std::sqrt(double(segs.size()) / 4.0), 1.0, 512.0));
+  const double cell = span / G + 1e-9;
+  std::vector<std::vector<uint32_t>> grid(size_t(G) * size_t(G));
+  for (uint32_t i = 0; i < segs.size(); ++i) {
+    const Seg& s = segs[i];
+    const int cx0 = int(double(std::min(s.a.x, s.b.x) - x0) / cell), cx1 = int(double(std::max(s.a.x, s.b.x) - x0) / cell);
+    const int cy0 = int(double(std::min(s.a.y, s.b.y) - y0) / cell), cy1 = int(double(std::max(s.a.y, s.b.y) - y0) / cell);
+    for (int cy = std::max(0, cy0); cy <= std::min(G - 1, cy1); ++cy)
+      for (int cx = std::max(0, cx0); cx <= std::min(G - 1, cx1); ++cx) grid[size_t(cy) * G + cx].push_back(i);
+  }
+  auto orient = [](const Pt& p, const Pt& q, const Pt& r) {
+    const int64_t v = (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);   // whole metres in a block: fits
+    return (v > 0) - (v < 0);
+  };
+  std::set<std::pair<uint32_t, uint32_t>> crossing;
+  for (auto& bucket : grid)
+    for (size_t i = 0; i < bucket.size(); ++i)
+      for (size_t j = i + 1; j < bucket.size(); ++j) {
+        const Seg& s = segs[bucket[i]]; const Seg& t = segs[bucket[j]];
+        if (s.ring == t.ring) continue;
+        if (orient(s.a, s.b, t.a) * orient(s.a, s.b, t.b) < 0 && orient(t.a, t.b, s.a) * orient(t.a, t.b, s.b) < 0)
+          crossing.insert({std::min(s.ring, t.ring), std::max(s.ring, t.ring)});
+      }
+  if (crossing.empty()) return;
+  auto area = [](const std::vector<Pt>& r) {
+    long double a = 0;
+    for (size_t i = 0; i + 1 < r.size(); ++i) a += (long double)r[i].x * r[i + 1].y - (long double)r[i + 1].x * r[i].y;
+    return std::fabs((double)a);
+  };
+  std::vector<char> drop(parts.size(), 0);
+  for (auto [a, b] : crossing) {
+    if (drop[a] || drop[b]) continue;
+    drop[area(parts[a]) < area(parts[b]) ? a : b] = 1;
+  }
+  std::vector<std::vector<Pt>> kept;
+  for (size_t i = 0; i < parts.size(); ++i) if (!drop[i]) kept.push_back(std::move(parts[i]));
+  parts.swap(kept);
+}
+
 // ------------------------------------------------------------------ source
 std::vector<std::string> SplitList(const std::string& s) {
   std::vector<std::string> v; std::string cur;
@@ -778,6 +834,7 @@ void AddFeature(const Layout& Lo, BlockBuild& B, int type, const std::string& na
           if (loops.empty()) { if (i == 0) break; continue; }
           for (auto& q : loops) parts.push_back(std::move(q));
         }
+        DropCrossingRings(parts);
       } else {
         for (auto& r : rings) for (auto& seg : ClipLine(r, x0, y0, x1, y1)) { auto q = Quantize(toUnits(seg), false); if (!q.empty()) parts.push_back(std::move(q)); }
       }
@@ -2460,8 +2517,10 @@ int CheckAreas(const std::string& path) {
   auto onSeg = [](P p, P q, P s) { return std::min(p.first, s.first) <= q.first && q.first <= std::max(p.first, s.first) && std::min(p.second, s.second) <= q.second && q.second <= std::max(p.second, s.second); };
   long long areas = 0, rings = 0, pinch = 0, cross = 0, touch = 0, point = 0;
   Walker w{r, c};
+  long long lineFeats = 0, lineVerts = 0, areaVerts = 0;
   w.emit = [&](int, const std::vector<std::vector<P>>& rgs, bool poly) {
-    if (!poly) return;
+    if (!poly) { ++lineFeats; for (auto& rg : rgs) lineVerts += (long long)rg.size(); return; }
+    for (auto& rg : rgs) areaVerts += (long long)rg.size();
     ++areas;
     std::vector<std::vector<P>> rs;
     for (auto rg : rgs) { if (rg.size() > 1 && rg.front() == rg.back()) rg.pop_back(); if (rg.size() >= 3) rs.push_back(std::move(rg)); }
@@ -2491,6 +2550,7 @@ int CheckAreas(const std::string& path) {
   fclose(f);
   printf("%s: %lld areas, %lld rings; %lld rings meet themselves, %lld ring pairs cross, %lld touch at a point, %lld share a cut edge\n",
          path.c_str(), areas, rings, pinch, cross, point, touch);
+  printf("  %lld area points, %lld lines with %lld points\n", areaVerts, lineFeats, lineVerts);
   return 1;
 }
 

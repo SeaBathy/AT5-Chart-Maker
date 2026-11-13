@@ -413,7 +413,9 @@ int ConvertDepth(ConvertOpts o) {
   fs::create_directories(o.outDir);
   const std::string tmp = (fs::path(o.outDir) / "_sat2at5_contours.mbtiles").string();
   struct Gone { std::string p; ~Gone() { std::error_code ec; fs::remove(p, ec); } } gone{tmp};
-  const size_t n = depth::WriteContours(*grid, levels, tmp);
+  const double dryTo = o.v.dryingHeight;   // --drying-height: for a survey, water shallower than this dries (green)
+  if (dryTo > 0) printf("  water shallower than %g m is shown as drying (green); --drying-height 0 turns this off\n", dryTo);
+  const size_t n = depth::WriteContours(*grid, levels, tmp, dryTo);
   printf("  %zu contour lines\n", n);
   if (n == 0) { printf("No contour lines fall inside this survey's depths - no depth chart made.\n"); return 0; }
   vec::Options v = o.v;

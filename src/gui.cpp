@@ -72,9 +72,12 @@ static const Help kHelp[H_COUNT] = {
    L"tan and the water is coloured right up to the shore. It switches itself off for charts that lie inland.\n\n"
    L"Choose None for lakes, dams and rivers, or Browse to use your own coastline shapefile (.shp)."},
   {L"Drying strip", L"The green strip along the shore that dries at low tide.",
+   L"Depth surveys: water shallower than this many metres is drawn green, as it dries at low tide. Surveys such as "
+   L"IMAS's are measured from mean sea level, so with a 2-3 m tide (the Great Barrier Reef) about 1.5 m dries at low "
+   L"spring tide; use less where tides are small. 0 = green only above sea level.\n\n"
    L"Contour files rarely have a 0 m line, so the drying strip is estimated: the coast is taken to be this many "
    L"metres above chart datum. The strip comes out wider on flat shores and thin on steep ones.\n\n"
-   L"It is an estimate, not surveyed tide data. 0 = no strip. Needs a coastline."},
+   L"It is an estimate, not surveyed tide data. 0 = no strip. For contour files it needs a coastline."},
   {L"Safety depth", L"Optional: shallower water shown red with a bold line.",
    L"Optional. Water shallower than this many metres is shown in red, with a bold contour line along the edge, "
    L"like a plotter's safety contour.\n\nLeave it empty for none."},
@@ -460,8 +463,7 @@ static int Layout(int W, int H) {
                                                 lShade, gShade, gHelpBtn[H_SHADE], gContours, gInterval, lIntervalM,
                                                 gHelpBtn[H_CONTOURS], gBathyNote};
   if (bathy) {
-    Hide({lDry, gDrying, lDryM, gHelpBtn[H_DRYING],
-          lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
+    Hide({lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
           gHelpBtn[H_MAJOR], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
           gHelpBtn[H_BANDS], gOverview, gHelpBtn[H_OVERVIEW], lVName, gName, gHelpBtn[H_VNAME], gPvLines,
           gHelpBtn[H_PVLINES], gPicNote});
@@ -509,7 +511,12 @@ static int Layout(int W, int H) {
       label(lFine, x0, y, LW);
       Put(gFine, x0 + LW, y, S(230), S(300));
       help(H_FINE, x0 + LW + S(230) + G, y);
-      for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, lines);
+      cx = x0 + LW + S(230) + G + HB + S(28);
+      label(lDry, cx, y, S(84)); cx += S(84);
+      Put(gDrying, cx, y, S(48), RH); cx += S(48) + S(4);
+      unit(lDryM, cx, y);
+      help(H_DRYING, cx, y);
+      for (HWND c : {gScheme, gDeep, gFine, gDrying}) EnableWindow(c, lines);
     }
     y += ROW;
     label(lLand, x0, y, LW);
@@ -524,7 +531,7 @@ static int Layout(int W, int H) {
   } else if (depth) {
     Hide(bathyCtl);
     EnableWindow(gLand, TRUE); EnableWindow(gLandBrowse, TRUE);
-    for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, TRUE);
+    for (HWND c : {gScheme, gDeep, gFine, gDrying}) EnableWindow(c, TRUE);
     label(lStyle, x0, y, LW);
     Put(gScheme, x0 + LW, y, S(230), S(300));
     help(H_STYLE, x0 + LW + S(230) + G, y);
@@ -1086,6 +1093,8 @@ static void OnConvert() {
       static const wchar_t* fineB[] = {L"close", L"medium", L"always", L"never"};
       const int fb = int(SendMessageW(gFine, CB_GETCURSEL, 0, 0));
       if (fb > 0 && fb < 4) args += std::wstring(L" --fine-contours ") + fineB[fb];
+      const std::wstring dry = Trim(GetText(gDrying));
+      args += L" --drying-height " + Q(dry.empty() ? std::wstring(L"0") : dry);
       const int landSel = int(SendMessageW(gLand, CB_GETCURSEL, 0, 0));
       std::wstring land = Trim(GetText(gLand));
       if (landSel == 0) land = L"auto";
@@ -1367,7 +1376,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case ID_CONTOURS: {   // contour lines on/off: the spacing and coastline only matter with lines
           const BOOL on = SendMessageW(gContours, BM_GETCHECK, 0, 0) == BST_CHECKED;
           EnableWindow(gInterval, on);
-          for (HWND c : {gScheme, gDeep, gFine}) EnableWindow(c, on);
+          for (HWND c : {gScheme, gDeep, gFine, gDrying}) EnableWindow(c, on);
           Relayout(true);
           break;
         }
