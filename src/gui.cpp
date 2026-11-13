@@ -48,7 +48,7 @@ static const Help kHelp[H_COUNT] = {
    L"Drag the file anywhere onto this window, or press Browse."},
   {L"Save to", L"The folder the chart files go into.",
    L"The finished chart files are written to this folder. It is filled in for you: next to your map file, ending "
-   L"in _AT5.\n\nWhen the chart is done, copy this whole folder onto the SD card. Use a new folder for each chart."},
+   L"in _AT5.\n\nWhen the chart is done, copy the .at5 files in it to the top of the SD card, not inside a folder."},
   {L"Chart name", L"The name the plotter tells your charts apart by.",
    L"A short name stored inside the chart files. The plotter uses it to tell your charts apart. It is filled in "
    L"from the map file's name; change it if you like.\n\nThe name and the date are stored in the files (nothing "
@@ -438,6 +438,17 @@ static const int kLeftW = 660;   // left column (steps 1 and 2), DIP
 
 // Places every control for client width W / height H (two columns: steps 1-2 left, step 3 right);
 // returns the client height the content needs.
+// Renames a combo box's first choice, keeping what's selected.
+static void SetFirstItem(HWND combo, const wchar_t* text) {
+  wchar_t now[64] = L"";
+  if (SendMessageW(combo, CB_GETLBTEXTLEN, 0, 0) < 64) SendMessageW(combo, CB_GETLBTEXT, 0, (LPARAM)now);
+  if (!wcscmp(now, text)) return;
+  const LRESULT sel = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+  SendMessageW(combo, CB_DELETESTRING, 0, 0);
+  SendMessageW(combo, CB_INSERTSTRING, 0, (LPARAM)text);
+  SendMessageW(combo, CB_SETCURSEL, sel, 0);
+}
+
 static int Layout(int W, int H) {
   const int M = S(16), P = S(18), G = S(8), RH = S(26), LW = S(104), HB = S(20), BW = S(92), GAP = S(12), ROW = RH + S(10);
   const bool bathy = gKindCode == 3;
@@ -488,37 +499,39 @@ static int Layout(int W, int H) {
                                                 lLineRange, gLineRange, lLineRangeM, gHelpBtn[H_LINERANGE], gOnlyRanges,
                                                 gHelpBtn[H_CONTOURS], gBathyNote};
   if (bathy) {
+    const int CW = S(230), RX = x0 + LW + CW + G + HB + S(28), RL = S(96);   // the right-hand column
+    SetFirstItem(gFinest, L"Auto");   // the short name fits the narrower box here
     Hide({lSafe, gSafety, lSafeM, gHelpBtn[H_SAFETY], lHi, gHilite, gHelpBtn[H_HILITE], gMore, lMajor, gMajor, lMajorM,
           gHelpBtn[H_MAJOR], lSynth, gSynth, gHelpBtn[H_SYNTH], lBands, gBands,
           gHelpBtn[H_BANDS], gOverview, gHelpBtn[H_OVERVIEW], lVName, gName, gHelpBtn[H_VNAME], gPvLines,
           gHelpBtn[H_PVLINES], gPicNote});
     label(lPalette, x0, y, LW);
-    Put(gPalette, x0 + LW, y, S(230), S(300));
-    help(H_PALETTE, x0 + LW + S(230) + G, y);
+    Put(gPalette, x0 + LW, y, CW, S(300));
+    help(H_PALETTE, x0 + LW + CW + G, y);
     {
-      int cx = x0 + LW + S(230) + G + HB + S(28);
-      label(lRange, cx, y, S(96)); cx += S(96);
+      int cx = RX;
+      label(lRange, cx, y, RL); cx += RL;
       Put(gRange, cx, y, S(80), RH); cx += S(80) + S(4);
       unit(lRangeM, cx, y);
       help(H_RANGE, cx, y);
     }
     y += ROW;
     label(lShade, x0, y, LW);
-    Put(gShade, x0 + LW, y, S(230), S(300));
-    help(H_SHADE, x0 + LW + S(230) + G, y);
+    Put(gShade, x0 + LW, y, CW, S(300));
+    help(H_SHADE, x0 + LW + CW + G, y);
     {
-      int cx = x0 + LW + S(230) + G + HB + S(28);
-      label(lFinest, cx, y, S(96)); cx += S(96);
+      int cx = RX;
+      label(lFinest, cx, y, RL); cx += RL;
       Put(gFinest, cx, y, std::max(S(120), right - HB - G - cx), S(300));
       help(H_FINEST, right - HB, y);
     }
     y += ROW;
     {
       label(lMake, x0, y, LW);
-      Put(gContours, x0 + LW, y, S(230), S(300));
-      help(H_CONTOURS, x0 + LW + S(230) + G, y);
-      int cx = x0 + LW + S(230) + G + HB + S(28);
-      label(lEvery, cx, y, S(96)); cx += S(96);
+      Put(gContours, x0 + LW, y, CW, S(300));
+      help(H_CONTOURS, x0 + LW + CW + G, y);
+      int cx = RX;
+      label(lEvery, cx, y, RL); cx += RL;
       Put(gInterval, cx, y, S(80), S(200)); cx += S(80) + S(4);
       unit(lIntervalM, cx, y);
       EnableWindow(gInterval, SurveyLines());
@@ -532,7 +545,7 @@ static int Layout(int W, int H) {
       unit(lLineRangeM, cx, y);
       help(H_LINERANGE, cx, y);
       EnableWindow(gLineRange, SurveyLines());
-      const int rx = x0 + LW + S(230) + G + HB + S(28);
+      const int rx = RX;
       Put(gOnlyRanges, rx, y + S(2), right - rx, S(22));
     }
     y += ROW;
@@ -540,19 +553,19 @@ static int Layout(int W, int H) {
     {
       const BOOL lines = SurveyLines();
       label(lStyle, x0, y, LW);
-      Put(gScheme, x0 + LW, y, S(230), S(300));
-      help(H_STYLE, x0 + LW + S(230) + G, y);
-      int cx = x0 + LW + S(230) + G + HB + S(28);
-      label(lDeep, cx, y, S(96)); cx += S(96);
+      Put(gScheme, x0 + LW, y, CW, S(300));
+      help(H_STYLE, x0 + LW + CW + G, y);
+      int cx = RX;
+      label(lDeep, cx, y, RL); cx += RL;
       Put(gDeep, cx, y, S(48), RH); cx += S(48) + S(4);
       unit(lDeepM, cx, y);
       help(H_DEEP, cx, y);
       y += ROW;
       label(lFine, x0, y, LW);
-      Put(gFine, x0 + LW, y, S(230), S(300));
-      help(H_FINE, x0 + LW + S(230) + G, y);
-      cx = x0 + LW + S(230) + G + HB + S(28);
-      label(lDry, cx, y, S(96)); cx += S(96);
+      Put(gFine, x0 + LW, y, CW, S(300));
+      help(H_FINE, x0 + LW + CW + G, y);
+      cx = RX;
+      label(lDry, cx, y, RL); cx += RL;
       Put(gDrying, cx, y, S(48), RH); cx += S(48) + S(4);
       unit(lDryM, cx, y);
       help(H_DRYING, cx, y);
@@ -662,6 +675,7 @@ static int Layout(int W, int H) {
           gName, gHelpBtn[H_VNAME], gPvLines, gHelpBtn[H_PVLINES]});
     label(lFinest, x0, y, LW);
     Put(gFinest, x0 + LW, y, S(220), S(300));
+    SetFirstItem(gFinest, L"Auto (recommended)");
     EnableWindow(gFinest, TRUE);   // a survey's "Contour chart only" greys it out
     help(H_FINEST, x0 + LW + S(220) + G, y);
     y += ROW;
@@ -1217,7 +1231,7 @@ static void OnDone(DWORD code) {
     std::wstring out = Trim(GetText(gOut));
     while (!out.empty() && (out.back() == L'\\' || out.back() == L'/')) out.pop_back();
     const std::wstring folder = out.substr(out.find_last_of(L"\\/") + 1);
-    SetStatus(L"\x2713  Done in " + t + L".  Copy the folder \x201C" + folder + L"\x201D onto your SD card.", kOk);
+    SetStatus(L"\x2713  Done in " + t + L".  Copy the .at5 files in \x201C" + folder + L"\x201D to the top of your SD card.", kOk);
   } else if (task == 1) {
     SetStatus(L"\x2713  Preview opened.", kOk);
     if (!gPreviewPng.empty()) ShellExecuteW(gWnd, L"open", gPreviewPng.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -1321,7 +1335,7 @@ static void CreateControls() {
   gOpen = Btn(L"Open folder", ID_OPEN);
   AddTip(gPreview, L"Opens a picture of the finished chart.");
   AddTip(gVerify, L"Tests the finished chart files. It should find no problems.");
-  AddTip(gOpen, L"Shows the chart files. Copy this whole folder onto the SD card.");
+  AddTip(gOpen, L"Shows the chart files. Copy the .at5 files to the top of the SD card.");
   gProg = Make(PROGRESS_CLASSW, L"", 0, 0);
   gStatus = Label(L"Ready.");
   gLog = Make(L"EDIT", L"", WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, ID_LOG, WS_EX_CLIENTEDGE);

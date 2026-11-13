@@ -31,13 +31,13 @@ The tool detects which kind of MBTiles you give it.
 - **Textures:** IMC writes `_3DTexture_<level>.at5`, split the same way, for example `_3DTexture_16_0.at5`. Levels finer than 1 m are named `1D2` (0.5 m), `1D4` and so on.
 - **sat2at5 output:** follows the same rules exactly, so its files can be used just like IMC's.
 
-**Several charts on one card.** Every chart has the same file names by default, so two charts in one place overwrite each other. There are two ways round it, and both are IMC's own:
-1. **One folder per chart** (the default). Each conversion writes to its own folder, `<input name>_AT5`. Copy each folder to the card as its own folder, for example `Cairns Sat\` and `AUS Bathy\`. Name the folder, not the files. Navico's own Insight Genesis downloads go on the card the same way, one folder per map.
-2. **Project naming.** This is IMC's "Project Based Naming" option, which "Customizes the output filenames with the work folder name". It puts the chart name inside every file name:
+**Several charts on one card.** Without a chart name in them, every chart's files have the same names, so two charts in one place overwrite each other. There are two ways round it, and both are IMC's own:
+1. **Project naming** (the window program's default, recommended). This is IMC's "Project Based Naming" option, which "Customizes the output filenames with the work folder name". It puts the chart name inside every file name:
    - `Cairns_Large.at5`, `Cairns_Medium.at5`, `Cairns_Large_0.at5` …
    - `_3DTexture_Cairns_16.at5`, `_3DTexture_Cairns_16_0.at5` …
 
-   Different charts can then share one folder. Turn it on with `--project NAME` on the command line, or the window program's **Chart name in file names** box, which uses the chart name. Navico's Insight Genesis downloads are named this way too, `Vector_Large.at5`.
+   Different charts can then sit together at the top of the card. Turn it on with `--project NAME` on the command line, or the window program's **Also put the name in the file names** box, which uses the chart name. Navico's Insight Genesis downloads are named this way too, `Vector_Large.at5`.
+2. **One folder per chart.** Plain names (`Large.at5` …), each chart in its own folder on the card, as Navico's own Insight Genesis downloads sometimes come. On the Simrad AT5 Chart Maker was tested on, charts in folders weren't found, so use project naming unless your plotter is known to read folders.
 
 **Other naming rules**
 - **Don't rename files by hand.** Each file stores its own name inside, so a renamed copy no longer matches.

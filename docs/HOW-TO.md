@@ -69,6 +69,8 @@ The window has three steps:
 
 A GeoTIFF of depths (for example from BathyPicker) becomes a coloured, shaded depth picture, with contour lines on top if you like.
 
+<img src="images/14-depth-survey.png" width="820">
+
 | Setting | What it does |
 |---|---|
 | **Colours** | **Spectrum** (red in the shallows through yellow and green to deep blue; shows the most detail), **Lagoon**, **Thermal**, **Chart blues** or **Grey**. |

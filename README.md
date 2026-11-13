@@ -13,7 +13,7 @@ Works anywhere in the world. Free and offline.</p>
   <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue">
 </p>
 
-<p align="center"><img src="docs/images/03-depth-chart.png" width="820" alt="AT5 Chart Maker window"></p>
+<p align="center"><img src="docs/images/14-depth-survey.png" width="820" alt="AT5 Chart Maker with a depth survey loaded: colours, colour depths, line depths and what to make"></p>
 
 ## What it does
 
