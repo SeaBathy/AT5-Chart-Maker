@@ -223,6 +223,68 @@ std::vector<Pt> Quantize(const Ring& r, bool closed) {
   return o;
 }
 
+// An area ring rounded to whole units. Rounding can make a ring that runs very close to itself (a thin band on a
+// steep wall, or a cut along a cell edge) double back on itself or come back to a point it has already passed.
+// Plotters fill areas by cutting them into triangles, and that fails on such rings: the missed triangles show as
+// land. So back-tracks are dropped and the ring is split at repeated points into simple loops; each loop keeps
+// its direction, so exteriors stay exteriors and holes stay holes. Loops are returned closed, like Quantize.
+std::vector<std::vector<Pt>> QuantizeArea(const Ring& r) {
+  std::vector<Pt> o;
+  for (auto& p : r) {
+    Pt q{int64_t(std::llround(p.first)), int64_t(std::llround(p.second))};
+    if (o.empty() || o.back().x != q.x || o.back().y != q.y) o.push_back(q);
+  }
+  while (o.size() > 1 && o.back().x == o.front().x && o.back().y == o.front().y) o.pop_back();
+  auto same = [](const Pt& a, const Pt& b) { return a.x == b.x && a.y == b.y; };
+  // drop spikes: a point where the ring turns straight back (A B A, or B on the way back along A-C)
+  auto despike = [&](std::vector<Pt>& v) {
+    bool changed = true;
+    while (changed && v.size() >= 3) {
+      changed = false;
+      for (size_t i = 0; i < v.size() && v.size() >= 3;) {
+        const size_t n = v.size();
+        const Pt& a = v[(i + n - 1) % n]; const Pt& b = v[i]; const Pt& c = v[(i + 1) % n];
+        const int64_t cr = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+        const int64_t dt = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
+        if (same(b, c) || (cr == 0 && dt <= 0)) { v.erase(v.begin() + long(i)); changed = true; }
+        else ++i;
+      }
+    }
+  };
+  auto area2 = [](const std::vector<Pt>& v) {
+    long double a = 0;
+    for (size_t i = 0; i < v.size(); ++i) { const Pt& p = v[i]; const Pt& q = v[(i + 1) % v.size()]; a += (long double)p.x * q.y - (long double)q.x * p.y; }
+    return a;
+  };
+  despike(o);
+  std::vector<std::vector<Pt>> loops;
+  if (o.size() < 3) return loops;
+  // split at repeated points: walk the ring; coming back to a point on the path closes a loop
+  std::vector<Pt> path;
+  std::map<std::pair<int64_t, int64_t>, size_t> where;
+  auto emit = [&](std::vector<Pt> v) {
+    despike(v);
+    if (v.size() < 3 || area2(v) == 0) return;
+    v.push_back(v.front());
+    loops.push_back(std::move(v));
+  };
+  for (const Pt& p : o) {
+    auto it = where.find({p.x, p.y});
+    if (it != where.end()) {
+      const size_t j = it->second;
+      std::vector<Pt> loop(path.begin() + long(j), path.end());
+      for (size_t k = j + 1; k < path.size(); ++k) where.erase({path[k].x, path[k].y});
+      path.resize(j + 1);
+      emit(std::move(loop));
+      continue;
+    }
+    where[{p.x, p.y}] = path.size();
+    path.push_back(p);
+  }
+  emit(std::move(path));
+  return loops;
+}
+
 // ------------------------------------------------------------------ source
 std::vector<std::string> SplitList(const std::string& s) {
   std::vector<std::string> v; std::string cur;
@@ -712,9 +774,9 @@ void AddFeature(const Layout& Lo, BlockBuild& B, int type, const std::string& na
       auto toUnits = [&](Ring r) { for (auto& p : r) { p.first /= s; p.second /= s; } return r; };
       if (poly) {
         for (size_t i = 0; i < rings.size(); ++i) {
-          auto q = Quantize(toUnits(ClipPoly(rings[i], x0, y0, x1, y1)), true);
-          if (q.empty()) { if (i == 0) break; continue; }
-          parts.push_back(std::move(q));
+          auto loops = QuantizeArea(toUnits(ClipPoly(rings[i], x0, y0, x1, y1)));
+          if (loops.empty()) { if (i == 0) break; continue; }
+          for (auto& q : loops) parts.push_back(std::move(q));
         }
       } else {
         for (auto& r : rings) for (auto& seg : ClipLine(r, x0, y0, x1, y1)) { auto q = Quantize(toUnits(seg), false); if (!q.empty()) parts.push_back(std::move(q)); }
@@ -2385,6 +2447,53 @@ int VerifyBody(const std::string& path) {
 }
 
 // Render a vector chart (area fills in their RGB colours, contours, land) north-up into a PNG.
+// Counts, in a finished chart, the area shapes a plotter's fill can't cut into triangles: rings that meet
+// themselves at a point, and rings of one area that cross (or only touch) each other.
+int CheckAreas(const std::string& path) {
+  FILE* f = nullptr;
+  if (fopen_s(&f, path.c_str(), "rb") || !f) throw std::runtime_error("cannot open " + path);
+  VReader r{f};
+  Chart c;
+  if (!OpenChart(r, c)) { fclose(f); return -1; }
+  using P = std::pair<int32_t, int32_t>;
+  auto orient = [](P p, P q, P s) { const int64_t v = int64_t(q.first - p.first) * (s.second - p.second) - int64_t(q.second - p.second) * (s.first - p.first); return (v > 0) - (v < 0); };
+  auto onSeg = [](P p, P q, P s) { return std::min(p.first, s.first) <= q.first && q.first <= std::max(p.first, s.first) && std::min(p.second, s.second) <= q.second && q.second <= std::max(p.second, s.second); };
+  long long areas = 0, rings = 0, pinch = 0, cross = 0, touch = 0, point = 0;
+  Walker w{r, c};
+  w.emit = [&](int, const std::vector<std::vector<P>>& rgs, bool poly) {
+    if (!poly) return;
+    ++areas;
+    std::vector<std::vector<P>> rs;
+    for (auto rg : rgs) { if (rg.size() > 1 && rg.front() == rg.back()) rg.pop_back(); if (rg.size() >= 3) rs.push_back(std::move(rg)); }
+    for (size_t i = 0; i < rs.size(); ++i) {
+      ++rings;
+      std::set<P> seen;
+      for (auto& p : rs[i]) if (!seen.insert(p).second) { ++pinch; break; }
+      for (size_t j = i + 1; j < rs.size(); ++j) {
+        const auto& A = rs[i]; const auto& B = rs[j];
+        int kind = 0;   // 2 crossing, 1 sharing a straight edge, 3 touching at a point
+        for (size_t u = 0; u < A.size() && kind != 2; ++u)
+          for (size_t v = 0; v < B.size() && kind != 2; ++v) {
+            const P a = A[u], b = A[(u + 1) % A.size()], s0 = B[v], s1 = B[(v + 1) % B.size()];
+            const int o1 = orient(a, b, s0), o2 = orient(a, b, s1), o3 = orient(s0, s1, a), o4 = orient(s0, s1, b);
+            if (o1 * o2 < 0 && o3 * o4 < 0) kind = 2;
+            else if ((o1 == 0 && onSeg(a, s0, b)) || (o2 == 0 && onSeg(a, s1, b)) || (o3 == 0 && onSeg(s0, a, s1)) || (o4 == 0 && onSeg(s0, b, s1))) {
+              // along a shared straight edge (both segments on one line: a cell or tile cut) or at a single point
+              const bool shared = o1 == 0 && o2 == 0;
+              kind = std::max(kind, shared ? 1 : 3) == 3 ? 3 : std::max(kind, 1);
+            }
+          }
+        if (kind == 2) ++cross; else if (kind == 1) ++touch; else if (kind == 3) ++point;
+      }
+    }
+  };
+  for (uint32_t o : c.blockOffsets) { r.Seek(c.blocksBase + o); w.Block(); }
+  fclose(f);
+  printf("%s: %lld areas, %lld rings; %lld rings meet themselves, %lld ring pairs cross, %lld touch at a point, %lld share a cut edge\n",
+         path.c_str(), areas, rings, pinch, cross, point, touch);
+  return 1;
+}
+
 int PreviewVector(const std::string& path, const std::string& png, int maxPx, bool drawLines, const double* box) {
   FILE* f = nullptr;
   if (fopen_s(&f, path.c_str(), "rb") || !f) throw std::runtime_error("cannot open " + path);

@@ -608,7 +608,7 @@ void Usage() {
       "      --depth-range A-B  spread the colours over A..B m (default 0 .. about the deepest 2 %%); deeper water\n"
       "                        shows in the deepest colour. A small range shows the shallows in more detail\n"
       "      --palette P       spectrum (default), lagoon, thermal, chart or grey\n"
-      "      --shade X         shading strength, as in the SeaBathy apps: 0 (flat colours), 0.5, 1 (default), 2 .. 20\n"
+      "      --shade X         shading strength, as in the SeaBathy apps: 0 (flat colours), 0.5, 1 (default), 2 .. 50\n"
       "                        (stronger shows smaller bumps, darker)\n"
       "      --hillshade N     older form: shading amount 0 .. 100 at the --relief strength\n"
       "      --relief N        slope exaggeration for the shading (default 5, which is --shade 1)\n"
@@ -663,6 +663,10 @@ int main(int argc, char** argv) {
       return CmdVerify(p, v);
     }
     if (a[0] == "rebuild" && a.size() == 3) return CmdRebuild(a[1], a[2]);
+    if (a[0] == "check-areas" && a.size() >= 2) {   // developer check: area shapes in finished charts
+      for (size_t i = 1; i < a.size(); ++i) vec::CheckAreas(a[i]);
+      return 0;
+    }
     if (a[0] == "preview" && a.size() >= 3) {
       bool lines = true;
       for (size_t i = 3; i < a.size(); ++i) if (a[i] == "--no-lines") { lines = false; a.erase(a.begin() + long(i)); break; }
@@ -724,7 +728,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--relief") o.d.relief = positive();
       else if (a[i] == "--shade") {
         const double x = num();
-        if (x < 0 || x > 20) throw std::runtime_error("--shade must be 0 to 20, e.g. 1 or 2.5");
+        if (x < 0 || x > 50) throw std::runtime_error("--shade must be 0 to 50, e.g. 1 or 2.5");
         o.d.relief = 5 * std::max(x, 0.01);
         o.d.hillshade = x > 0 ? 1 : 0;
       }

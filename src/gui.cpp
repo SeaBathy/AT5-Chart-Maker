@@ -126,7 +126,7 @@ static const Help kHelp[H_COUNT] = {
    L"Light mostly from the north-west, with some from the west, north and south-west, shades the slopes, so "
    L"reefs, ridges and channels stand out whichever way they face.\n\n"
    L"The same scale as the SeaBathy apps: Off gives flat colours, 1x shows the slopes as they are, and 2x "
-   L"to 15x make them steeper and darker, so smaller bumps and ledges show. 1x suits most surveys; try 2x to 4x "
+   L"to 50x make them steeper and darker, so smaller bumps and ledges show. 1x suits most surveys; try 2x to 4x "
    L"for flat reef tops and sandy bottoms."},
   {L"Contour lines", L"Also makes a chart of depth contour lines.",
    L"Draws depth contour lines from the survey, with their depths written along them, as a separate depth "
@@ -1060,10 +1060,10 @@ static void OnConvert() {
   if (!project.empty()) args += L" --project " + Q(project);
   if (gKindCode == 3) {   // depth survey
     static const wchar_t* palettes[] = {L"spectrum", L"lagoon", L"thermal", L"chart", L"grey"};
-    static const wchar_t* shades[] = {L"0", L"0.5", L"1", L"2", L"3", L"4", L"6", L"8", L"10", L"15"};
+    static const wchar_t* shades[] = {L"0", L"0.5", L"1", L"2", L"3", L"4", L"6", L"8", L"10", L"15", L"20", L"30", L"50"};
     const int pi = int(SendMessageW(gPalette, CB_GETCURSEL, 0, 0)), si = int(SendMessageW(gShade, CB_GETCURSEL, 0, 0));
     args += std::wstring(L" --palette ") + palettes[std::clamp(pi, 0, 4)];
-    args += std::wstring(L" --shade ") + shades[std::clamp(si, 0, 9)];
+    args += std::wstring(L" --shade ") + shades[std::clamp(si, 0, 12)];
     static const wchar_t* finestD[] = {nullptr, L"0.5", L"1", L"2", L"4", L"8", L"16"};
     const int fd = int(SendMessageW(gFinest, CB_GETCURSEL, 0, 0));
     if (fd > 0 && fd < 7) args += std::wstring(L" --finest ") + finestD[fd];
@@ -1233,7 +1233,7 @@ static void CreateControls() {
   lRange = Label(L"Depth range"); gRange = EditBox(ID_RANGE, L"auto"); lRangeM = Label(L"m");
   HelpBtn(H_RANGE);
   lShade = Label(L"Hillshade");
-  gShade = Combo(ID_SHADE, {L"Off", L"0.5x", L"1x (recommended)", L"2x", L"3x", L"4x", L"6x", L"8x", L"10x", L"15x"}, 2);
+  gShade = Combo(ID_SHADE, {L"Off", L"0.5x", L"1x (recommended)", L"2x", L"3x", L"4x", L"6x", L"8x", L"10x", L"15x", L"20x", L"30x", L"50x"}, 2);
   HelpBtn(H_SHADE);
   gContours = Check(L"Also make contour lines every", ID_CONTOURS, true);
   // A drop-down you can also type in: a spacing, auto, or a list of depths.

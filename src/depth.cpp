@@ -14,6 +14,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -934,32 +935,6 @@ void Simplify(std::vector<std::pair<double, double>>& p, double tol) {   // Doug
 }
 
 // Contour lines of one grid level, in global tile units at zoom z (4096 per tile, y down from the north).
-std::vector<Line> LinesAt(const Grid& g, int L, int z, const std::vector<double>& levels) {
-  const int W = g.lw[size_t(L)], H = g.lh[size_t(L)];
-  const auto s = Smoothed(g.levels[size_t(L)], W, H);
-  const double world = 4096.0 * double(int64_t(1) << z), f = double(1 << L);
-  std::vector<Line> out;
-  for (double v : levels) {
-    std::vector<std::vector<std::pair<double, double>>> raw;
-    Trace(s, W, H, v, raw);
-    for (auto& r : raw) {
-      Line ln{v, {}};
-      ln.pts.reserve(r.size());
-      for (auto& p : r) {
-        double x, y, lon, lat;
-        g.PixelToMap((p.first + 0.5) * f, (p.second + 0.5) * f, x, y);
-        g.proj.ToLonLat(x, y, lon, lat);
-        lat = std::clamp(lat, -85.0, 85.0);
-        const double gx = (lon + 180) / 360 * world;
-        const double gy = (1 - std::log(std::tan(kPi / 4 + lat * kDeg / 2)) / kPi) / 2 * world;
-        ln.pts.push_back({gx, gy});
-      }
-      Simplify(ln.pts, 0.75);
-      if (ln.pts.size() >= 2) out.push_back(std::move(ln));
-    }
-  }
-  return out;
-}
 
 // ---- MVT encoding
 void Varint(std::vector<uint8_t>& b, uint64_t v) { while (v >= 0x80) { b.push_back(uint8_t(v | 0x80)); v >>= 7; } b.push_back(uint8_t(v)); }
@@ -967,7 +942,291 @@ void Key(std::vector<uint8_t>& b, int field, int wire) { Varint(b, uint64_t(fiel
 void Bytes(std::vector<uint8_t>& b, int field, const std::vector<uint8_t>& v) { Key(b, field, 2); Varint(b, v.size()); b.insert(b.end(), v.begin(), v.end()); }
 uint32_t Zig(int32_t v) { return uint32_t((v << 1) ^ (v >> 31)); }
 
-struct TileLines { std::vector<std::pair<double, std::vector<std::pair<int32_t, int32_t>>>> lines; };
+// One depth band of a tile: its depth range and rings (exteriors clockwise, holes anticlockwise, tile units).
+struct TileArea { double d1, d2; std::vector<std::vector<std::pair<int32_t, int32_t>>> rings; };
+struct TileLines {
+  std::vector<std::pair<double, std::vector<std::pair<int32_t, int32_t>>>> lines;
+  std::vector<TileArea> areas;
+};
+
+// ---- depth areas straight from the grid
+// The water between two contour levels, as polygons. Each level's "deeper than v" region is traced as closed
+// rings on the same smoothed grid as the contour lines (so every area edge sits on its line), with a border and
+// no-data counted as shallower than anything so every ring closes. A band is then the rings of its two levels
+// together under the even-odd rule; a ring's nesting depth among them says exterior (even) or hole (odd).
+using Pt = std::pair<double, double>;
+using RingP = std::vector<Pt>;
+struct Poly { double d1, d2; RingP outer; std::vector<RingP> holes; };
+
+double Area2(const RingP& r) {   // twice the signed area; > 0 = clockwise with y down
+  double a = 0;
+  for (size_t i = 0, n = r.size(); i < n; ++i) { const Pt& p = r[i]; const Pt& q = r[(i + 1) % n]; a += p.first * q.second - q.first * p.second; }
+  return a;
+}
+bool Inside(const RingP& r, const Pt& p) {
+  bool in = false;
+  for (size_t i = 0, j = r.size() - 1; i < r.size(); j = i++) {
+    const Pt& a = r[i]; const Pt& b = r[j];
+    if ((a.second > p.second) != (b.second > p.second) &&
+        p.first < (b.first - a.first) * (p.second - a.second) / (b.second - a.second) + a.first) in = !in;
+  }
+  return in;
+}
+// ---- one surface for the lines and the areas
+// Each grid cell is split into four triangles around its centre (the mean of its corners), so depth varies
+// linearly inside every triangle. Cutting a triangle at a depth level is then exact, and two triangles that share
+// a side agree on every point along it. A band's outline is made of only two things: its cuts at its two levels,
+// and the survey's edge; everything else cancels between neighbours. So the rings come out closed and oriented
+// (exteriors clockwise, holes anticlockwise, y down), no two of them lie on top of each other, and the contour
+// lines are the very same cuts, so lines and colour edges match point for point.
+struct PId {
+  uint64_t a; uint32_t k;   // vertex id (k = ~0u), or an edge (a = side key) cut at level k
+  bool operator==(const PId& o) const { return a == o.a && k == o.k; }
+};
+struct PIdHash { size_t operator()(const PId& p) const { return size_t(p.a * 0x9E3779B97F4A7C15ull ^ (uint64_t(p.k) << 1)); } };
+struct TriOut {
+  std::vector<std::vector<RingP>> bandRings;   // per band (levels.size() + 1 of them)
+  std::vector<std::vector<RingP>> levelLines;  // per level
+};
+
+void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<double>& lv, bool wantAreas, TriOut& out) {
+  const size_t nLev = lv.size(), nBand = nLev + 1;
+  // Levels nudged a hair deeper, so no depth in the data (centimetres) sits exactly on one: no zero-length pieces.
+  std::vector<double> thr(nLev);
+  for (size_t k = 0; k < nLev; ++k) thr[k] = lv[k] + 1e-4;
+  const uint64_t nCorner = uint64_t(W) * uint64_t(H);
+  const uint64_t NV = nCorner + uint64_t(std::max(0, W - 1)) * uint64_t(std::max(0, H - 1));
+  auto at = [&](int x, int y) { return s[size_t(y) * size_t(W) + size_t(x)]; };
+  auto cellOk = [&](int x, int y) {
+    return x >= 0 && y >= 0 && x + 1 < W && y + 1 < H && Valid(at(x, y)) && Valid(at(x + 1, y)) && Valid(at(x + 1, y + 1)) && Valid(at(x, y + 1));
+  };
+  struct V { uint64_t id; double x, y, v; };
+  std::unordered_map<PId, Pt, PIdHash> pos;
+  std::vector<std::vector<std::pair<PId, PId>>> bandEdges(wantAreas ? nBand : 0);
+  std::vector<std::vector<std::pair<PId, PId>>> lineSegs(nLev);
+  struct Q { PId id; double x, y, v; int mask; };   // mask: triangle sides the point lies on (1 grid side, 2 B-C, 4 C-A)
+  for (int y = 0; y + 1 < H; ++y)
+    for (int x = 0; x + 1 < W; ++x) {
+      if (!cellOk(x, y)) continue;
+      const V c[4] = {{uint64_t(y) * W + x, double(x), double(y), at(x, y)},
+                      {uint64_t(y) * W + x + 1, double(x + 1), double(y), at(x + 1, y)},
+                      {uint64_t(y + 1) * W + x + 1, double(x + 1), double(y + 1), at(x + 1, y + 1)},
+                      {uint64_t(y + 1) * W + x, double(x), double(y + 1), at(x, y + 1)}};
+      const V ctr{nCorner + uint64_t(y) * uint64_t(W - 1) + uint64_t(x), x + 0.5, y + 0.5, (c[0].v + c[1].v + c[2].v + c[3].v) / 4};
+      // the cell next to each grid side (top, right, bottom, left): the side is the survey's edge when it's missing
+      const bool edgeSide[4] = {!cellOk(x, y - 1), !cellOk(x + 1, y), !cellOk(x, y + 1), !cellOk(x - 1, y)};
+      for (int t = 0; t < 4; ++t) {
+        const V& A = c[t]; const V& B = c[(t + 1) % 4]; const V& C = ctr;   // clockwise with y down
+        const double vmin = std::min({A.v, B.v, C.v}), vmax = std::max({A.v, B.v, C.v});
+        // the side's two vertices, by side bit
+        auto sideEnds = [&](int bit, const V*& p, const V*& q) {
+          if (bit == 1) { p = &A; q = &B; } else if (bit == 2) { p = &B; q = &C; } else { p = &C; q = &A; }
+          if (q->id < p->id) std::swap(p, q);
+        };
+        auto cutPoint = [&](int bit, size_t k) {
+          const V *p, *q; sideEnds(bit, p, q);
+          const PId id{p->id * NV + q->id, uint32_t(k)};
+          auto it = pos.find(id);
+          if (it == pos.end()) {
+            const double f = std::clamp((thr[k] - p->v) / (q->v - p->v), 0.0, 1.0);
+            it = pos.emplace(id, Pt{p->x + f * (q->x - p->x), p->y + f * (q->y - p->y)}).first;
+          }
+          return Q{id, it->second.first, it->second.second, thr[k], bit};
+        };
+        auto vert = [&](const V& v, int mask) {
+          const PId id{v.id, ~0u};
+          pos.emplace(id, Pt{v.x, v.y});
+          return Q{id, v.x, v.y, v.v, mask};
+        };
+        // the bands this triangle reaches
+        size_t b0 = 0, b1 = 0;
+        while (b0 < nLev && thr[b0] <= vmin) ++b0;
+        b1 = b0;
+        while (b1 < nLev && thr[b1] <= vmax) ++b1;
+        // contour lines: one straight cut per level crossing the triangle
+        for (size_t k = b0; k < b1; ++k) {
+          std::vector<Q> pts;
+          const V* vs[3] = {&A, &B, &C};
+          const int bits[3] = {1, 2, 4};   // side i joins vs[i] and vs[(i+1)%3]
+          for (int i = 0; i < 3; ++i) {
+            const double va = vs[i]->v, vb = vs[(i + 1) % 3]->v;
+            if ((va < thr[k]) != (vb < thr[k])) pts.push_back(cutPoint(bits[i], k));
+          }
+          if (pts.size() == 2) lineSegs[k].push_back({pts[0].id, pts[1].id});
+        }
+        if (!wantAreas) continue;
+        for (size_t b = b0; b <= b1; ++b) {
+          std::vector<Q> poly = {vert(A, 1 | 4), vert(B, 1 | 2), vert(C, 2 | 4)};
+          // Sutherland-Hodgman against "at least the band's top level" and "shallower than its bottom level"
+          for (int pass = 0; pass < 2; ++pass) {
+            const bool lo = pass == 0;
+            if (lo ? b == 0 : b == nLev) continue;
+            const size_t k = lo ? b - 1 : b;
+            auto keep = [&](const Q& q) { return lo ? q.v >= thr[k] : q.v < thr[k]; };
+            std::vector<Q> next;
+            for (size_t i = 0; i < poly.size(); ++i) {
+              const Q& P = poly[i]; const Q& R = poly[(i + 1) % poly.size()];
+              const bool kp = keep(P), kr = keep(R);
+              if (kp) next.push_back(P);
+              if (kp != kr) {
+                const int common = P.mask & R.mask;
+                const int bit = common & 1 ? 1 : common & 2 ? 2 : 4;
+                next.push_back(cutPoint(bit, k));
+              }
+            }
+            poly = std::move(next);
+            if (poly.size() < 3) break;
+          }
+          if (poly.size() < 3) continue;
+          for (size_t i = 0; i < poly.size(); ++i) {
+            const Q& P = poly[i]; const Q& R = poly[(i + 1) % poly.size()];
+            const int common = P.mask & R.mask;
+            if (common) {                                   // along a triangle side
+              if (!(common & 1) || !edgeSide[t]) continue;  // inside the survey: cancels with the neighbour
+            }
+            bandEdges[b].push_back({P.id, R.id});
+          }
+        }
+      }
+    }
+  // join the lines (open at the survey's edge, closed elsewhere)
+  out.levelLines.assign(nLev, {});
+  for (size_t k = 0; k < nLev; ++k) {
+    auto& segs = lineSegs[k];
+    std::unordered_map<PId, std::vector<size_t>, PIdHash> ends;
+    for (size_t i = 0; i < segs.size(); ++i) { ends[segs[i].first].push_back(i); ends[segs[i].second].push_back(i); }
+    std::vector<char> used(segs.size(), 0);
+    auto follow = [&](size_t start, PId from) {
+      RingP pts{pos[from]};
+      size_t cur = start; PId atp = from;
+      for (;;) {
+        used[cur] = 1;
+        const PId nxt = segs[cur].first == atp ? segs[cur].second : segs[cur].first;
+        pts.push_back(pos[nxt]);
+        atp = nxt;
+        size_t found = SIZE_MAX;
+        for (size_t c2 : ends[nxt]) if (!used[c2]) { found = c2; break; }
+        if (found == SIZE_MAX) break;
+        cur = found;
+      }
+      out.levelLines[k].push_back(std::move(pts));
+    };
+    for (size_t i = 0; i < segs.size(); ++i)
+      if (!used[i]) {
+        if (ends[segs[i].first].size() == 1) follow(i, segs[i].first);
+        else if (ends[segs[i].second].size() == 1) follow(i, segs[i].second);
+      }
+    for (size_t i = 0; i < segs.size(); ++i) if (!used[i]) follow(i, segs[i].first);
+  }
+  if (!wantAreas) return;
+  // join each band's directed boundary edges into rings
+  out.bandRings.assign(nBand, {});
+  for (size_t b = 0; b < nBand; ++b) {
+    auto& E = bandEdges[b];
+    std::unordered_map<PId, std::vector<size_t>, PIdHash> from;
+    for (size_t i = 0; i < E.size(); ++i) from[E[i].first].push_back(i);
+    std::vector<char> used(E.size(), 0);
+    for (size_t i = 0; i < E.size(); ++i) {
+      if (used[i]) continue;
+      RingP ring;
+      size_t cur = i;
+      for (;;) {
+        used[cur] = 1;
+        ring.push_back(pos[E[cur].first]);
+        const PId nxt = E[cur].second;
+        size_t found = SIZE_MAX;
+        for (size_t c2 : from[nxt]) if (!used[c2]) { found = c2; break; }
+        if (found == SIZE_MAX) break;
+        cur = found;
+      }
+      if (ring.size() >= 3 && std::fabs(Area2(ring)) > 1e-9) out.bandRings[b].push_back(std::move(ring));
+    }
+  }
+}
+
+// The depth bands of grid level L, in global tile units at zoom z: each exterior with the holes inside it.
+std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>& levels) {
+  const int W = g.lw[size_t(L)], H = g.lh[size_t(L)];
+  const auto s = Smoothed(g.levels[size_t(L)], W, H);
+  std::vector<double> lv(levels.begin(), levels.end());
+  std::sort(lv.begin(), lv.end());
+  TriOut tri;
+  TriTrace(s, W, H, lv, true, tri);
+  std::vector<Poly> polys;
+  for (size_t b = 0; b < tri.bandRings.size(); ++b) {
+    const double d1 = b == 0 ? std::min(double(g.minDepth), lv.empty() ? 0.0 : lv.front() - 1) : lv[b - 1];
+    const double d2 = b < lv.size() ? lv[b] : std::max(double(g.maxDepth), d1 + 1);
+    struct R { RingP pts; double minx, miny, maxx, maxy, area; };
+    std::vector<R> ext, hol;
+    for (auto& r : tri.bandRings[b]) {
+      R ri{r, 1e300, 1e300, -1e300, -1e300, Area2(r)};
+      for (auto& p : r) { ri.minx = std::min(ri.minx, p.first); ri.maxx = std::max(ri.maxx, p.first); ri.miny = std::min(ri.miny, p.second); ri.maxy = std::max(ri.maxy, p.second); }
+      (ri.area > 0 ? ext : hol).push_back(std::move(ri));
+    }
+    const size_t first = polys.size();
+    for (auto& e : ext) polys.push_back(Poly{d1, d2, e.pts, {}});
+    for (auto& h : hol) {
+      // the smallest exterior around the hole (tested at the middle of its first side, off any shared corner)
+      const Pt p{(h.pts[0].first + h.pts[1].first) / 2, (h.pts[0].second + h.pts[1].second) / 2};
+      int best = -1; double bestA = 1e300;
+      for (size_t i = 0; i < ext.size(); ++i) {
+        const R& e = ext[i];
+        if (e.area >= bestA || p.first < e.minx || p.first > e.maxx || p.second < e.miny || p.second > e.maxy) continue;
+        if (Inside(e.pts, p)) { best = int(i); bestA = e.area; }
+      }
+      if (best >= 0) polys[first + size_t(best)].holes.push_back(h.pts);
+    }
+  }
+  // To global tile units. Not simplified: a band's hole and the next band's outline are the same points, so
+  // neighbouring areas share their edge exactly (as depth areas in official charts do).
+  const double world = 4096.0 * double(int64_t(1) << z), f = double(1 << L);
+  auto toTile = [&](RingP& r) {
+    for (auto& p : r) {
+      double x, y, lon, lat;
+      g.PixelToMap((p.first + 0.5) * f, (p.second + 0.5) * f, x, y);
+      g.proj.ToLonLat(x, y, lon, lat);
+      lat = std::clamp(lat, -85.0, 85.0);
+      p = {(lon + 180) / 360 * world, (1 - std::log(std::tan(kPi / 4 + lat * kDeg / 2)) / kPi) / 2 * world};
+    }
+  };
+  for (auto& pg : polys) {
+    toTile(pg.outer);
+    if (Area2(pg.outer) < 0) {   // a mirrored grid: turn everything round
+      std::reverse(pg.outer.begin(), pg.outer.end());
+      for (auto& h : pg.holes) { toTile(h); std::reverse(h.begin(), h.end()); }
+    } else {
+      for (auto& h : pg.holes) toTile(h);
+    }
+  }
+  return polys;
+}
+
+// Contour lines of grid level L, from the same cuts as the areas, in global tile units at zoom z.
+std::vector<Line> LinesAt(const Grid& g, int L, int z, const std::vector<double>& levels) {
+  const int W = g.lw[size_t(L)], H = g.lh[size_t(L)];
+  const auto s = Smoothed(g.levels[size_t(L)], W, H);
+  std::vector<double> lv(levels.begin(), levels.end());
+  std::sort(lv.begin(), lv.end());
+  TriOut tri;
+  TriTrace(s, W, H, lv, false, tri);
+  const double world = 4096.0 * double(int64_t(1) << z), f = double(1 << L);
+  std::vector<Line> out;
+  for (size_t k = 0; k < lv.size(); ++k)
+    for (auto& r : tri.levelLines[k]) {
+      Line ln{lv[k], {}};
+      ln.pts.reserve(r.size());
+      for (auto& p : r) {
+        double x, y, lon, lat;
+        g.PixelToMap((p.first + 0.5) * f, (p.second + 0.5) * f, x, y);
+        g.proj.ToLonLat(x, y, lon, lat);
+        lat = std::clamp(lat, -85.0, 85.0);
+        ln.pts.push_back({(lon + 180) / 360 * world, (1 - std::log(std::tan(kPi / 4 + lat * kDeg / 2)) / kPi) / 2 * world});
+      }
+      Simplify(ln.pts, 0.75);
+      if (ln.pts.size() >= 2) out.push_back(std::move(ln));
+    }
+  return out;
+}
 
 // Clip a polyline to [x0,x1]x[y0,y1] (Liang-Barsky per segment), appending the pieces.
 void ClipTo(const std::vector<std::pair<double, double>>& p, double x0, double y0, double x1, double y1,
@@ -1021,6 +1280,146 @@ void AddToTiles(const std::vector<Line>& lines, std::map<std::pair<int64_t, int6
   }
 }
 
+// Sutherland-Hodgman: a ring clipped to [x0,x1]x[y0,y1] (orientation kept).
+RingP ClipRing(const RingP& in, double x0, double y0, double x1, double y1) {
+  RingP cur = in;
+  for (int e = 0; e < 4 && !cur.empty(); ++e) {
+    auto inside = [&](const Pt& p) { return e == 0 ? p.first >= x0 : e == 1 ? p.first <= x1 : e == 2 ? p.second >= y0 : p.second <= y1; };
+    auto cut = [&](const Pt& a, const Pt& b) {
+      const double t = e == 0 ? (x0 - a.first) / (b.first - a.first) : e == 1 ? (x1 - a.first) / (b.first - a.first)
+                     : e == 2 ? (y0 - a.second) / (b.second - a.second) : (y1 - a.second) / (b.second - a.second);
+      return Pt{a.first + t * (b.first - a.first), a.second + t * (b.second - a.second)};
+    };
+    RingP next;
+    for (size_t i = 0; i < cur.size(); ++i) {
+      const Pt& a = cur[i]; const Pt& b = cur[(i + 1) % cur.size()];
+      const bool ia = inside(a), ib = inside(b);
+      if (ia) next.push_back(a);
+      if (ia != ib) next.push_back(cut(a, b));
+    }
+    cur = std::move(next);
+  }
+  return cur;
+}
+
+void AddAreasToTiles(const std::vector<Poly>& polys, std::map<std::pair<int64_t, int64_t>, TileLines>& tiles) {
+  auto local = [](const RingP& r, int64_t tx, int64_t ty) {
+    std::vector<std::pair<int32_t, int32_t>> q;
+    for (auto& p : r) {
+      const std::pair<int32_t, int32_t> v{int32_t(std::lround(p.first - tx * 4096.0)), int32_t(std::lround(p.second - ty * 4096.0))};
+      if (q.empty() || q.back() != v) q.push_back(v);
+    }
+    while (q.size() > 1 && q.front() == q.back()) q.pop_back();
+    return q;
+  };
+  auto area2 = [](const std::vector<std::pair<int32_t, int32_t>>& r) {
+    double a = 0;
+    for (size_t i = 0, n = r.size(); i < n; ++i) a += double(r[i].first) * r[(i + 1) % n].second - double(r[(i + 1) % n].first) * r[i].second;
+    return a;
+  };
+  for (const auto& pg : polys) {
+    double minx = 1e300, miny = 1e300, maxx = -1e300, maxy = -1e300;
+    for (auto& p : pg.outer) { minx = std::min(minx, p.first); maxx = std::max(maxx, p.first); miny = std::min(miny, p.second); maxy = std::max(maxy, p.second); }
+    for (int64_t ty = int64_t(std::floor(miny / 4096)); ty <= int64_t(std::floor(maxy / 4096)); ++ty)
+      for (int64_t tx = int64_t(std::floor(minx / 4096)); tx <= int64_t(std::floor(maxx / 4096)); ++tx) {
+        const double x0 = tx * 4096.0, y0 = ty * 4096.0, x1 = x0 + 4096, y1 = y0 + 4096;
+        auto ext = local(ClipRing(pg.outer, x0, y0, x1, y1), tx, ty);
+        if (ext.size() < 3 || area2(ext) <= 0) continue;
+        TileArea ta{pg.d1, pg.d2, {std::move(ext)}};
+        for (auto& h : pg.holes) {
+          auto hole = local(ClipRing(h, x0, y0, x1, y1), tx, ty);
+          if (hole.size() >= 3 && area2(hole) < 0) ta.rings.push_back(std::move(hole));
+        }
+        tiles[{tx, ty}].areas.push_back(std::move(ta));
+      }
+  }
+}
+
+// Geometry check (SAT2AT5_CHECK_AREAS=1): counts what a plotter's area filling can't cope with: a ring that
+// touches itself (a repeated point) and rings of one area that cross or touch each other.
+void CheckAreas(const std::map<std::pair<int64_t, int64_t>, TileLines>& tiles, int z) {
+  using P = std::pair<int32_t, int32_t>;
+  auto cross = [](P a, P b, P c, P d) {   // segments ab and cd share any point (proper or touching)
+    auto o = [](P p, P q, P r) { const int64_t v = int64_t(q.first - p.first) * (r.second - p.second) - int64_t(q.second - p.second) * (r.first - p.first); return (v > 0) - (v < 0); };
+    auto on = [](P p, P q, P r) { return std::min(p.first, r.first) <= q.first && q.first <= std::max(p.first, r.first) && std::min(p.second, r.second) <= q.second && q.second <= std::max(p.second, r.second); };
+    const int o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+    if (o1 != o2 && o3 != o4) return true;
+    return (o1 == 0 && on(a, c, b)) || (o2 == 0 && on(a, d, b)) || (o3 == 0 && on(c, a, d)) || (o4 == 0 && on(c, b, d));
+  };
+  long long pinch = 0, touch = 0, rings = 0, areas = 0;
+  for (auto& [xy, t] : tiles)
+    for (auto& a : t.areas) {
+      ++areas;
+      for (size_t i = 0; i < a.rings.size(); ++i) {
+        ++rings;
+        std::set<P> seen;
+        for (auto& p : a.rings[i]) {
+          const bool edge = p.first == 0 || p.first == 4096 || p.second == 0 || p.second == 4096;
+          if (!seen.insert(p).second && !edge) ++pinch;
+        }
+        for (size_t j = i + 1; j < a.rings.size(); ++j) {
+          const auto& A = a.rings[i]; const auto& B = a.rings[j];
+          bool hit = false;
+          auto border = [](P p, P q) { return (p.first == q.first && (p.first == 0 || p.first == 4096)) || (p.second == q.second && (p.second == 0 || p.second == 4096)); };
+          for (size_t u = 0; u < A.size() && !hit; ++u)
+            for (size_t v = 0; v < B.size() && !hit; ++v) {
+              const P a0 = A[u], a1 = A[(u + 1) % A.size()], b0 = B[v], b1 = B[(v + 1) % B.size()];
+              if (border(a0, a1) || border(b0, b1)) continue;   // both cut along the tile edge: expected
+              hit = cross(a0, a1, b0, b1);
+            }
+          touch += hit;
+        }
+      }
+    }
+  printf("  area check, zoom %d: %lld areas, %lld rings, %lld rings touching themselves, %lld ring pairs crossing or touching\n",
+         z, areas, rings, pinch, touch);
+}
+
+std::vector<uint8_t> EncodeAreas(const std::vector<TileArea>& areas) {
+  std::vector<double> vals;
+  auto idx = [&](double v) {
+    auto it = std::find(vals.begin(), vals.end(), v);
+    if (it != vals.end()) return uint64_t(it - vals.begin());
+    vals.push_back(v);
+    return uint64_t(vals.size() - 1);
+  };
+  std::vector<uint8_t> layer;
+  Key(layer, 15, 0); Varint(layer, 2);
+  Bytes(layer, 1, std::vector<uint8_t>{'d', 'e', 'p', 'a', 'r', 'e'});
+  for (auto& a : areas) {
+    std::vector<uint8_t> feat, tags, geom;
+    Varint(tags, 0); Varint(tags, idx(a.d1));
+    Varint(tags, 1); Varint(tags, idx(a.d2));
+    Bytes(feat, 2, tags);
+    Key(feat, 3, 0); Varint(feat, 3);                                    // POLYGON
+    int32_t cx = 0, cy = 0;
+    for (auto& r : a.rings) {
+      Varint(geom, 1 | 1 << 3);
+      Varint(geom, Zig(r[0].first - cx)); Varint(geom, Zig(r[0].second - cy));
+      cx = r[0].first; cy = r[0].second;
+      Varint(geom, 2 | uint64_t(r.size() - 1) << 3);
+      for (size_t i = 1; i < r.size(); ++i) {
+        Varint(geom, Zig(r[i].first - cx)); Varint(geom, Zig(r[i].second - cy));
+        cx = r[i].first; cy = r[i].second;
+      }
+      Varint(geom, 7 | 1 << 3);                                          // ClosePath
+    }
+    Bytes(feat, 4, geom);
+    Bytes(layer, 2, feat);
+  }
+  Bytes(layer, 3, std::vector<uint8_t>{'d', 'r', 'v', 'a', 'l', '1'});
+  Bytes(layer, 3, std::vector<uint8_t>{'d', 'r', 'v', 'a', 'l', '2'});
+  for (double v : vals) {
+    std::vector<uint8_t> val;
+    Key(val, 3, 1);
+    uint64_t u; memcpy(&u, &v, 8);
+    for (int i = 0; i < 8; ++i) val.push_back(uint8_t(u >> (8 * i)));
+    Bytes(layer, 4, val);
+  }
+  Key(layer, 5, 0); Varint(layer, 4096);
+  return layer;
+}
+
 std::vector<uint8_t> EncodeTile(const TileLines& t) {
   std::vector<double> vals;
   for (auto& l : t.lines) if (std::find(vals.begin(), vals.end(), l.first) == vals.end()) vals.push_back(l.first);
@@ -1054,7 +1453,8 @@ std::vector<uint8_t> EncodeTile(const TileLines& t) {
   }
   Key(layer, 5, 0); Varint(layer, 4096);                                 // extent
   std::vector<uint8_t> tile;
-  Bytes(tile, 3, layer);
+  if (!t.lines.empty()) Bytes(tile, 3, layer);
+  if (!t.areas.empty()) Bytes(tile, 3, EncodeAreas(t.areas));
   return tile;
 }
 
@@ -1139,9 +1539,10 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, doubl
 }
 
 size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& path) {
-  // detail zoom: about four tile units per cell; overview at zoom 9 from a coarser grid level
+  // detail zoom: about sixteen tile units per cell, so rounding to tile units never brings neighbouring contours
+  // (and the area edges on them) together on steep walls; overview at zoom 9 from a coarser grid level
   const double cosLat = std::cos(g.centreLat * kDeg);
-  int zmax = int(std::ceil(std::log2(2 * kPi * kA * cosLat / (4096 * std::max(0.5, g.cellMetres / 4)))));
+  int zmax = int(std::ceil(std::log2(2 * kPi * kA * cosLat / (4096 * std::max(0.25, g.cellMetres / 16)))));
   zmax = std::clamp(zmax, 10, 16);
   std::map<int, std::map<std::pair<int64_t, int64_t>, TileLines>> zooms;
   size_t lines = 0;
@@ -1149,14 +1550,23 @@ size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std
     auto ls = LinesAt(g, 0, zmax, levels);
     lines = ls.size();
     AddToTiles(ls, zooms[zmax]);
+    // the water between the lines, as depth areas worked out from the grid itself
+    AddAreasToTiles(AreasAt(g, 0, zmax, levels), zooms[zmax]);
   }
   constexpr int kOverview = 9;
   if (zmax > kOverview) {
     const double unit9 = 2 * kPi * kA * cosLat / (4096.0 * 512);
     int L = 0;
     while (L + 1 < int(g.levels.size()) && g.cellMetres * double(1 << L) < unit9 * 2) ++L;
-    AddToTiles(LinesAt(g, L, kOverview, levels), zooms[kOverview]);
+    // zoomed out, the lines every 5 m only: finer bands on a wall would be thinner than the overview's units
+    std::vector<double> major;
+    for (double v : levels) if (std::fabs(v / 5 - std::round(v / 5)) < 1e-6) major.push_back(v);
+    const auto& ov = major.size() >= 2 ? major : levels;
+    AddToTiles(LinesAt(g, L, kOverview, ov), zooms[kOverview]);
+    AddAreasToTiles(AreasAt(g, L, kOverview, ov), zooms[kOverview]);
   }
+  if (const char* chk = getenv("SAT2AT5_CHECK_AREAS"); chk && *chk == '1')
+    for (auto& [z, tiles] : zooms) CheckAreas(tiles, z);
   DeleteFileW(TiffFile::Widen(path).c_str());
   sqlite3* db = nullptr;
   if (sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK)
@@ -1171,7 +1581,8 @@ size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std
     std::vector<std::pair<std::string, std::string>> meta = {
         {"name", "contours"}, {"format", "pbf"}, {"type", "overlay"},
         {"minzoom", std::to_string(zmin)}, {"maxzoom", std::to_string(zmax)},
-        {"json", "{\"vector_layers\":[{\"id\":\"contours\",\"fields\":{\"depth\":\"Number\"}}]}"}};
+        {"json", "{\"vector_layers\":[{\"id\":\"contours\",\"fields\":{\"depth\":\"Number\"}},"
+                 "{\"id\":\"depare\",\"fields\":{\"drval1\":\"Number\",\"drval2\":\"Number\"}}]}"}};
     snprintf(b, sizeof b, "%.6f,%.6f,%.6f,%.6f", g.box.lonMin, g.box.latMin, g.box.lonMax, g.box.latMax);
     meta.push_back({"bounds", b});
     sqlite3_stmt* st = nullptr;

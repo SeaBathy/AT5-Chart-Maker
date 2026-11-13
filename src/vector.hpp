@@ -51,6 +51,7 @@ std::vector<std::pair<double, uint32_t>> ParseBands(const std::string& s);  // p
 std::vector<std::pair<double, uint32_t>> DefaultBands();
 std::vector<std::pair<double, uint32_t>> FinalBands(const Options& o);   // scheme + safety depth + highlight
 uint32_t ParseRgb(const std::string& s);
+int CheckAreas(const std::string& at5Path);   // counts area shapes a plotter fill can't triangulate
 int PreviewVector(const std::string& at5Path, const std::string& png, int maxPx, bool lines = true, const double* lonLatBox = nullptr);  // 1 ok, -1 not a vector chart
 int VerifyBody(const std::string& path);  // 1 ok, 0 broken, -1 not a vector file with the embedded style library
 int Convert(const std::string& input, const std::string& outDir, const Options& o, const std::string& date);

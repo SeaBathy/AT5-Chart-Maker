@@ -8,6 +8,8 @@ The window program (`AT5 Chart Maker.exe`, built as `bin\sat2at5_gui.exe`) runs 
 |---|---|
 | Raster MBTiles (jpg/png/webp), GeoTIFF, or JPG/PNG/TIF + world file | Satellite/3D texture layers: `_3DTexture_<N>.at5` (N = metres per pixel, 0.5 … 8192) |
 | **Depth** GeoTIFF (one band of depths or heights) | A coloured, hillshaded depth picture as texture layers, plus (with `--contours`) a contour-line depth chart, `Large*.at5` + `Medium.at5` |
+
+**Depth charts from a survey.** The contour lines and the coloured depth areas between them come from one surface: each grid cell is split into four triangles around its centre, so depth is linear inside each triangle and cutting it at a depth is exact. A band's outline is only its cuts at its two depths plus the survey's edge, so neighbouring areas share their edges point for point and the lines lie exactly on the colour edges. The areas are written as real depth areas (`drval1`/`drval2`), not rebuilt from the lines. When the chart is written, area rings rounded to whole units are cleaned: back-tracks are dropped and a ring that comes back to a point it passed is split into simple loops, because plotters fill areas by cutting them into triangles and can't do that with rings that meet or cross themselves (the missed triangles show as land). `sat2at5 check-areas <file.at5>` counts any such shapes left in a chart.
 | **Vector** MBTiles (`format=pbf`, Mapbox Vector Tiles) | Vector depth chart in IMC's layout, coloured like a real chart (S-52 or Navionics style, true RGB): `Large*.at5` (depth areas, land, depth contours) + `Medium.at5` (zoomed-out overview) |
 
 The tool detects which kind of MBTiles you give it.
