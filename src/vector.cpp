@@ -2518,8 +2518,9 @@ int CheckAreas(const std::string& path) {
   long long areas = 0, rings = 0, pinch = 0, cross = 0, touch = 0, point = 0;
   Walker w{r, c};
   long long lineFeats = 0, lineVerts = 0, areaVerts = 0;
-  w.emit = [&](int, const std::vector<std::vector<P>>& rgs, bool poly) {
-    if (!poly) { ++lineFeats; for (auto& rg : rgs) lineVerts += (long long)rg.size(); return; }
+  std::map<int, long long> linesByType;
+  w.emit = [&](int type, const std::vector<std::vector<P>>& rgs, bool poly) {
+    if (!poly) { ++lineFeats; ++linesByType[type]; for (auto& rg : rgs) lineVerts += (long long)rg.size(); return; }
     for (auto& rg : rgs) areaVerts += (long long)rg.size();
     ++areas;
     std::vector<std::vector<P>> rs;
@@ -2551,6 +2552,7 @@ int CheckAreas(const std::string& path) {
   printf("%s: %lld areas, %lld rings; %lld rings meet themselves, %lld ring pairs cross, %lld touch at a point, %lld share a cut edge\n",
          path.c_str(), areas, rings, pinch, cross, point, touch);
   printf("  %lld area points, %lld lines with %lld points\n", areaVerts, lineFeats, lineVerts);
+  for (auto& [t, n] : linesByType) printf("  line style %d: %lld lines\n", t, n);
   return 1;
 }
 
