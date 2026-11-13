@@ -7,7 +7,8 @@ Navico's Insight Map Creator makes). Free, no installing, works offline.
     strip, blue getting lighter with depth, white deep water. Works with or without depth areas.
   * Satellite photos or coloured bathymetry pictures as the plotter's imagery / shaded-relief layer.
   * Depth surveys (a GeoTIFF of depths, e.g. from BathyPicker): a coloured, shaded depth picture in the
-    colours and depth range you choose, plus contour lines on top if you like.
+    colours and depth range you choose, and a contour chart with its own depth range. Make both or
+    just one, and leave out the water outside your depths if you like.
 
 NOT FOR NAVIGATION. These are home-made charts. Always carry official charts.
 
