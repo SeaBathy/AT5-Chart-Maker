@@ -3,7 +3,7 @@
 <h1 align="center">AT5 Chart Maker</h1>
 
 <p align="center">Make your own charts for <b>Simrad, Lowrance and B&amp;G</b> chartplotters, from depth contours, satellite pictures or bathymetric maps.<br>
-Free, works offline.</p>
+Works anywhere in the world. Free and offline.</p>
 
 <p align="center">
   <img alt="Version 1.4.1" src="https://img.shields.io/badge/version-1.4.1-0f766e">
