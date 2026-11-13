@@ -380,7 +380,7 @@ int Convert(const ConvertOpts& o, std::unique_ptr<src::Source> given = nullptr) 
     printf("WARNING: %zu older .at5 file(s) in this folder are not part of this chart - delete them before copying:\n", stale.size());
     for (auto& s : stale) printf("  %s\n", s.c_str());
   }
-  printf("Done: %.1f MB in %.1f s total. Copy this folder to the chart card (one folder per chart).\n", total / 1e6,
+  printf("Done: %.1f MB in %.1f s total. Copy the .at5 files to the top of the chart card.\n", total / 1e6,
          std::chrono::duration<double>(Clock::now() - tStart).count());
   return 0;
 }

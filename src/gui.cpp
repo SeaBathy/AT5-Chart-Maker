@@ -53,10 +53,12 @@ static const Help kHelp[H_COUNT] = {
    L"A short name stored inside the chart files. The plotter uses it to tell your charts apart. It is filled in "
    L"from the map file's name; change it if you like.\n\nThe name and the date are stored in the files (nothing "
    L"else about you or your PC is), so pick a neutral name before sharing charts."},
-  {L"Chart name in the file names", L"Lets several charts share one folder on the card.",
-   L"Normally every chart uses the same file names (Large.at5, _3DTexture_16.at5 ...), so each chart needs its own "
-   L"folder on the SD card.\n\nTick this to put the chart name into the file names (for example Cairns_Large.at5). "
-   L"Then several charts can sit in the same folder. This is Insight Map Creator's \"Project Based Naming\"."},
+  {L"Chart name in the file names", L"Recommended: puts the chart name in every file name.",
+   L"Ticked (recommended), the chart name goes into every file name, for example Cairns_Large.at5. Copy the .at5 "
+   L"files to the top of the SD card: several charts can sit there together. On the Simrad this was tested on, "
+   L"charts in their own folders on the card weren't found; named files at the top of the card were.\n\n"
+   L"Unticked, every chart uses the same plain names (Large.at5, _3DTexture_16.at5 ...), so only one chart fits in "
+   L"one place. This is Insight Map Creator's \"Project Based Naming\"."},
   {L"Colour style", L"How the depths are coloured.",
    L"\x2022  Navionics style (recommended): tan land, a green drying strip, blue that gets lighter with every "
    L"contour, white deep water.\n\n"
@@ -1191,7 +1193,7 @@ static void CreateControls() {
   lName = Label(L"Chart name");
   gDesc = EditBox(ID_DESC, L"Fills in when you choose a map");
   HelpBtn(H_NAME);
-  gProject = Check(L"Also put the name in the file names", ID_PROJECT, false);
+  gProject = Check(L"Also put the name in the file names", ID_PROJECT, true);
   HelpBtn(H_PROJECT);
   // 2  Chart look (depth charts)
   lStyle = Label(L"Chart colours");

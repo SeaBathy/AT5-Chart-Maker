@@ -34,7 +34,7 @@ The window has three steps:
 
 **Chart name.** A short name stored inside the chart files, which the plotter uses to tell your charts apart. It's filled in from the file name (for example `M=MoretonBay5m`); change it if you like. The name and the date are stored in the files, and nothing else about you or your PC is, so pick a neutral name before sharing charts.
 
-**Also put the name in the file names.** Normally every chart uses the same file names (`Large.at5`, `_3DTexture_16.at5` …), so each chart needs its own folder on the card. Tick this and the name goes into the file names (`Cairns_Large.at5` …), so several charts can share one folder. This matches Insight Map Creator's "Project Based Naming".
+**Also put the name in the file names** (ticked by default, recommended). The chart name goes into every file name (`Cairns_Large.at5` …), so the files of several charts can sit together at the top of the SD card. On the Simrad this was tested on, charts in their own folders on the card weren't found; named files at the top of the card were. Unticked, every chart uses the same plain names (`Large.at5`, `_3DTexture_16.at5` …), so only one chart fits in one place. This matches Insight Map Creator's "Project Based Naming".
 
 <img src="images/03-depth-chart.png" width="820">
 
@@ -109,11 +109,11 @@ If something goes wrong, the status line turns red, and the messages underneath 
 
 ## Putting the chart on the plotter
 
-1. Copy the whole output folder (for example `Moreton Bay 5m contours_AT5`) onto the SD card. Rename the folder if you like, but **don't rename the files inside it**.
+1. Copy the `.at5` files from the output folder (for example `Moreton Bay 5m contours_AT5`) to the top of the SD card. **Don't rename the files.**
 2. Put the card in the plotter. In the chart settings, choose **Lowrance / Insight** as the chart source (not Navionics or C-MAP).
 3. For satellite or bathymetry pictures, also turn on the photo layer. On **Simrad** (NSS, NSO, GO …): **Chart options → Photo overlay → Full**. *Land only* hides the picture over water. **Photo transparency** lets the chart show through the picture. On Lowrance and older units it's **Imagery** or **Shaded relief**.
 
-**Several charts on one card:** give each chart its own folder. Or tick *Also put the name in the file names* before converting, and then charts can share a folder.
+**Several charts on one card:** keep *Also put the name in the file names* ticked (the default), and copy each chart's files to the top of the card; their names keep them apart.
 
 **Card size:** FAT32 cards of 32 GB or smaller are the safe choice. FAT32 can't hold a file over 4 GB, but the program splits big charts into files of about 450 MB. Newer plotters are reported to read bigger cards formatted NTFS; exFAT is reported not to work.
 

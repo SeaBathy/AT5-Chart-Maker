@@ -41,18 +41,19 @@ HOW TO MAKE A CHART
 
 PUTTING IT ON THE PLOTTER
 -------------------------
-  1. Copy the whole output folder (for example "Reef 5m_AT5") onto the SD card.
-     Don't rename the files inside it. Renaming the folder is fine.
+  1. Copy the .at5 files from the output folder (for example "Reef 5m_AT5") to the top of
+     the SD card. Don't rename the files.
   2. Put the card in the plotter. In the chart settings choose Lowrance / Insight as the chart
      source (not Navionics or C-MAP).
   3. For satellite or bathymetry pictures, also turn on the photo layer. Simrad: Chart options ->
      Photo overlay -> Full ("Land only" hides it over water). Lowrance: Imagery / Shaded relief.
 
-  If nothing shows: some older units only read files at the top of the card. Copy the .at5 files
-  themselves (not the folder) to the top of the card instead. Try a small chart first.
+  "Also put the name in the file names" is ticked by default: every file carries the chart's name
+  (Cairns_Large.at5 ...), so several charts can sit together at the top of the card. On the Simrad
+  this was tested on, charts in their own folders weren't found; named files at the top were.
 
-  Several charts on one card: put each chart in its own folder on the card. Or tick
-  "Also put the name in the file names" before converting - then charts can share a folder.
+  If nothing shows: check the chart source and that the files are at the top of the card. Try a
+  small chart first.
 
 
 WHAT FILES WORK

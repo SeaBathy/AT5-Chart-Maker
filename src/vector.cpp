@@ -2322,7 +2322,7 @@ int Convert(const std::string& input, const std::string& outDir, const Options& 
   fs::remove(storePath);
   if (const long long bad = gBadVecTiles.load())
     printf("WARNING: some tiles of the file are damaged and were skipped (%lld tile reads) - those spots are left blank\n", bad);
-  printf("Done: %.1f MB in %.1f s. Copy this folder to the chart card (one folder per chart).\n", total / 1e6,
+  printf("Done: %.1f MB in %.1f s. Copy the .at5 files to the top of the chart card.\n", total / 1e6,
          std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
   return 0;
 }

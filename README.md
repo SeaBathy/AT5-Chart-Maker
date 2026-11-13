@@ -22,7 +22,7 @@ Free, works offline.</p>
 - **Bathymetry surveys on your sounder.** Open a depth GeoTIFF (for example from BathyPicker) and get a coloured, hillshaded depth picture, with contour lines on top if you like. You choose the colours, the depth range and the shading: see [Bathymetry charts on your sounder](#bathymetry-charts-on-your-sounder).
 - **Built-in world coastline.** Land is drawn and the water is coloured right up to the shore, with extra detail around Australia. It switches off by itself for lakes and dams.
 - **Fast.** All of Australia's 5 m contours convert in about 15 minutes; a bay takes seconds.
-- **Same files as Navico's Insight Map Creator.** The output is `.at5` charts with the same names and layout, so you copy the folder to an SD card and the plotter reads it.
+- **Same files as Navico's Insight Map Creator.** The output is `.at5` charts with the same names and layout, so you copy the files to an SD card and the plotter reads them.
 
 > **Not for navigation.** These are home-made charts. Always carry official charts.
 
@@ -43,7 +43,7 @@ You need Windows 10 or 11 (64-bit). The first time, Windows may say *"Windows pr
 | **1. Choose your map.** Drag the file onto the window, or press Browse. The program works out what kind of map it is, and fills in where to save it and the chart's name. | <img src="docs/images/03-depth-chart.png" width="420"> |
 | **2. Pick the look.** The defaults suit almost every file. Every setting has a **?**: hover for a hint, click for the full explanation. | <img src="docs/images/04-help.png" width="300"> |
 | **3. Press Convert.** Progress shows on the right, and the button turns into **Stop** while it works. | <img src="docs/images/06-converting.png" width="420"> |
-| **4. Copy the folder onto the SD card** (FAT32, 32 GB or smaller). On the plotter, choose **Lowrance / Insight** as the chart source. | <img src="docs/images/07-done.png" width="420"> |
+| **4. Copy the `.at5` files to the top of the SD card** (FAT32, 32 GB or smaller). On the plotter, choose **Lowrance / Insight** as the chart source. | <img src="docs/images/07-done.png" width="420"> |
 
 The program also has a step-by-step guide built in (**How to use**, top right). The full guide with every setting explained is in **[docs/HOW-TO.md](docs/HOW-TO.md)**.
 
@@ -137,8 +137,8 @@ your phone or PC.
 - **Chart source:** in the chart settings, choose **Lowrance / Insight** (not Navionics or C-MAP), or your chart's name.
 - **Pictures** (satellite or depth pictures) are the plotter's photo / imagery layer. On **Simrad** (NSS, NSO, GO …): **Chart options → Photo overlay → Full**. *Land only* hides the picture over water. **Photo transparency** lets the chart show through the picture. On Lowrance and older units the setting is called **Imagery** or **Shaded relief**.
 - **SD card:** FAT32, 32 GB or smaller. Newer units are reported to read bigger cards formatted NTFS; exFAT is reported not to work.
-- **Several charts:** give each chart its own folder on the card. Or tick **Also put the name in the file names** before converting, and then charts can share a folder.
-- **Nothing shows?** Some older units only read files at the top of the card: copy the `.at5` files themselves (not the folder) to the top. Try a small chart first.
+- **Copy the files, not a folder:** **Also put the name in the file names** is ticked by default, so every file carries the chart's name (`Cairns_Large.at5` …) and several charts can sit together at the top of the card. On the Simrad this was tested on, charts in their own folders on the card weren't found; named files at the top of the card were.
+- **Nothing shows?** Check the chart source is Lowrance / Insight and the files are at the top of the card. Try a small chart first.
 
 ## Questions
 
