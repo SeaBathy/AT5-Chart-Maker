@@ -228,6 +228,7 @@ struct ConvertOpts {
   // depth GeoTIFFs (bathymetry surveys)
   depth::Options d;
   std::string contours = "off";   // contour lines for the vector chart: off, auto, a spacing or a list
+  double lineMin = -1, lineMax = -1;   // --contour-range: lines only between these depths (m); -1 = all
   bool imagery = true;            // the coloured, shaded picture (imagery layer)
   bool pictureContours = true;    // with --contours, also draw the lines into the picture
   bool fixedContours = false;     // the same contour spacing at every depth (down to the colour range)
@@ -391,7 +392,14 @@ int ConvertDepth(ConvertOpts o) {
   printf("Depth GeoTIFF: %s\n", o.input.c_str());
   o.d.crs = o.crs;
   auto grid = depth::Load(o.input, o.d);
-  const auto levels = depth::ContourLevels(*grid, o.contours, o.d.rangeMax > o.d.rangeMin ? o.d.rangeMax : depth::AutoRangeMax(*grid), o.fixedContours);
+  auto levels = depth::ContourLevels(*grid, o.contours, o.d.rangeMax > o.d.rangeMin ? o.d.rangeMax : depth::AutoRangeMax(*grid), o.fixedContours);
+  if (o.lineMax > o.lineMin && !levels.empty()) {   // --contour-range: lines (and colour steps) only between two depths
+    std::vector<double> kept;
+    for (double v : levels) if (v >= o.lineMin - 1e-9 && v <= o.lineMax + 1e-9) kept.push_back(v);
+    printf("  contour lines only from %g to %g m (--contour-range): %zu of %zu depths\n", o.lineMin, o.lineMax, kept.size(), levels.size());
+    if (kept.empty()) throw std::runtime_error("--contour-range leaves no contour lines: no contour depths lie between those two depths");
+    levels.swap(kept);
+  }
   if (!o.imagery && levels.empty()) throw std::runtime_error("--contours-only needs contour levels (e.g. --contours 5)");
   if (o.pictureContours) o.d.pictureContours = levels;   // the lines also go into the picture, so Photo overlay shows them
   if (o.imagery) {
@@ -415,7 +423,9 @@ int ConvertDepth(ConvertOpts o) {
   struct Gone { std::string p; ~Gone() { std::error_code ec; fs::remove(p, ec); } } gone{tmp};
   const double dryTo = o.v.dryingHeight;   // --drying-height: for a survey, water shallower than this dries (green)
   if (dryTo > 0) printf("  water shallower than %g m is shown as drying (green); --drying-height 0 turns this off\n", dryTo);
-  const size_t n = depth::WriteContours(*grid, levels, tmp, dryTo);
+  const bool keep = o.d.clipToRange && o.lineMax > o.lineMin;   // --only-ranges: no water outside the line depths
+  if (keep) printf("  only water from %g to %g m gets colours in the chart (--only-ranges)\n", o.lineMin, o.lineMax);
+  const size_t n = depth::WriteContours(*grid, levels, tmp, dryTo, keep ? o.lineMin : 0, keep ? o.lineMax : -1);
   printf("  %zu contour lines\n", n);
   if (n == 0) { printf("No contour lines fall inside this survey's depths - no depth chart made.\n"); return 0; }
   vec::Options v = o.v;
@@ -475,7 +485,8 @@ void DecodeDxt1Tile(const uint8_t* d, uint8_t* rgba /*256x256, row0 south*/) {
       for (int i = 0; i < 16; ++i) {
         int k = (bits >> (2 * i)) & 3;
         uint8_t* o = rgba + (size_t(by * 4 + i / 4) * 256 + bx * 4 + i % 4) * 4;
-        o[0] = uint8_t(p[k][0]); o[1] = uint8_t(p[k][1]); o[2] = uint8_t(p[k][2]); o[3] = 255;
+        o[0] = uint8_t(p[k][0]); o[1] = uint8_t(p[k][1]); o[2] = uint8_t(p[k][2]);
+        o[3] = (c0 <= c1 && k == 3) ? 0 : 255;   // three-colour mode's index 3: see-through (no data)
       }
     }
 }
@@ -621,6 +632,9 @@ void Usage() {
       "                        A spacing applies in the shallows and widens in deep water (5 m past 50 m, 10 m past\n"
       "                        200 m, 50 m past 500 m, 100 m past 1000 m), never finer than asked for\n"
       "      --fixed-contours  the same spacing at every depth instead, down to the bottom of --depth-range\n"
+      "      --contour-range A-B  contour lines only from A to B m (e.g. 0-50); the chart's colour steps follow\n"
+      "      --only-ranges     leave out water outside the ranges: the picture shows only --depth-range,\n"
+      "                        the chart colours only --contour-range (the rest is see-through)\n"
       "      --contours-only   make just the depth chart, not the picture\n"
       "      --no-picture-contours  with --contours, keep the lines out of the picture (they're drawn into it by default,\n"
       "                        so the plotter's Photo overlay shows them too)\n"
@@ -739,6 +753,15 @@ int main(int argc, char** argv) {
       else if (a[i] == "--contours-only") { o.imagery = false; if (o.contours == "off") o.contours = "auto"; }
       else if (a[i] == "--no-picture-contours") o.pictureContours = false;
       else if (a[i] == "--fixed-contours") o.fixedContours = true;
+      else if (a[i] == "--only-ranges") o.d.clipToRange = true;   // leave out water outside --depth-range / --contour-range
+      else if (a[i] == "--contour-range") {   // A-B metres: contour lines only between these depths
+        const std::string opt = a[i], v = val();
+        const size_t dash = v.find('-', 1);
+        if (dash == std::string::npos) throw std::runtime_error("--contour-range needs FROM-TO in metres, e.g. 0-50");
+        o.lineMin = numOf(opt, v.substr(0, dash)); o.lineMax = numOf(opt, v.substr(dash + 1));
+        if (o.lineMin > o.lineMax) std::swap(o.lineMin, o.lineMax);
+        if (o.lineMax - o.lineMin < 0.1) throw std::runtime_error("--contour-range needs two different depths, e.g. 0-50");
+      }
       else if (a[i] == "--bands" || a[i] == "--colours" || a[i] == "--colors") {
         const std::string v = val();
         navPreset = v == "navionics";
@@ -773,7 +796,7 @@ int main(int argc, char** argv) {
       else if (a[i] == "--major-contours") o.v.majorContourEvery = positive();
       else if (a[i] == "--fine-contours") {
         const std::string v = val();
-        o.v.fineContourZoom = v == "close" ? 3808 : v == "medium" ? 9330 : v == "always" ? 22851 : v == "never" ? -1 : 0;
+        o.v.fineContourZoom = v == "close" ? 3808 : v == "medium" ? 9330 : v == "always" ? 11425 /* styles::kAllScales */ : v == "never" ? -1 : 0;
         if (o.v.fineContourZoom == 0) {
           try { o.v.fineContourZoom = int(std::lround(numOf("--fine-contours", v) * 256)); } catch (...) { o.v.fineContourZoom = 0; }
         }

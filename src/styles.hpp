@@ -42,7 +42,9 @@ inline constexpr Kind kLine{2, "(LINE) Nautical", 200, 200, 6040, 3, 2081, 2096}
 inline constexpr Kind kPoint{1, "(POINT) Nautical", 200, 200, 6045, 2, 0, 4};
 
 // Scale limits a style is shown between (the same units as the chart layouts' scale steps).
-inline constexpr int32_t kAllScales = 22851;      // detail chart: every scale it covers
+// The detail chart takes over from the overview at kAllScales. Insight Map Creator uses 22851; half that keeps the
+// overview on one zoom step further in, so zooming out swaps to it sooner.
+inline constexpr int32_t kAllScales = 11425;      // detail chart: every scale it covers
 inline constexpr int32_t kFineScales = 3808;      // detail chart: only zoomed in (fine contours and their labels)
 inline constexpr int32_t kOverviewScales = 457022;
 

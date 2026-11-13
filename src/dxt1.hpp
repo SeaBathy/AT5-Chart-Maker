@@ -108,21 +108,59 @@ inline void EncodeBlock(const uint8_t* px, uint8_t* out) {
   out[4] = uint8_t(bits); out[5] = uint8_t(bits >> 8); out[6] = uint8_t(bits >> 16); out[7] = uint8_t(bits >> 24);
 }
 
-// rgba: 256x256 RGBA tile, row 0 = SOUTH edge (AT5 texture orientation). alpha==0 -> no data (black).
+// A block with some see-through pixels (opaque[i] false): DXT1's three-colour mode, where c0 <= c1 and index 3
+// means transparent (black to a decoder that ignores transparency, as no-data was before).
+inline void EncodeBlockPunch(const uint8_t* px, const bool* opaque, uint8_t* out) {
+  // endpoints: the opaque pixels furthest apart along their main colour direction (by brightness here: simple and
+  // good enough for the few blocks on a survey's edge)
+  int ilo = -1, ihi = -1, lo = INT32_MAX, hi = -1;
+  for (int i = 0; i < 16; ++i) {
+    if (!opaque[i]) continue;
+    const int l = px[i * 3] * 2 + px[i * 3 + 1] * 5 + px[i * 3 + 2];
+    if (l < lo) { lo = l; ilo = i; }
+    if (l > hi) { hi = l; ihi = i; }
+  }
+  uint16_t a = To565(px[ilo * 3], px[ilo * 3 + 1], px[ilo * 3 + 2]), b = To565(px[ihi * 3], px[ihi * 3 + 1], px[ihi * 3 + 2]);
+  if (a > b) std::swap(a, b);   // c0 <= c1: three-colour mode
+  int p[3][3]; From565(a, p[0]); From565(b, p[1]);
+  for (int c = 0; c < 3; ++c) p[2][c] = (p[0][c] + p[1][c]) / 2;
+  uint32_t bits = 0;
+  for (int i = 0; i < 16; ++i) {
+    int best = 3;
+    if (opaque[i]) {
+      int be = INT32_MAX;
+      for (int k = 0; k < 3; ++k) {
+        const int dr = px[i * 3] - p[k][0], dg = px[i * 3 + 1] - p[k][1], db = px[i * 3 + 2] - p[k][2];
+        const int e = dr * dr + dg * dg + db * db;
+        if (e < be) { be = e; best = k; }
+      }
+    }
+    bits |= uint32_t(best) << (2 * i);
+  }
+  out[0] = uint8_t(a); out[1] = uint8_t(a >> 8); out[2] = uint8_t(b); out[3] = uint8_t(b >> 8);
+  out[4] = uint8_t(bits); out[5] = uint8_t(bits >> 8); out[6] = uint8_t(bits >> 16); out[7] = uint8_t(bits >> 24);
+}
+
+// rgba: 256x256 RGBA tile, row 0 = SOUTH edge (AT5 texture orientation). alpha==0 -> no data: see-through (DXT1's
+// transparent index), which a plotter without transparency shows black.
 inline void EncodeTile256(const uint8_t* rgba, uint8_t* out32k) {
   uint8_t blk[48];
+  bool opaque[16];
   uint8_t* o = out32k;
   for (int by = 0; by < 64; ++by)
     for (int bx = 0; bx < 64; ++bx) {
-      bool any = false;
+      int n = 0;
       for (int y = 0; y < 4; ++y)
         for (int x = 0; x < 4; ++x) {
           const uint8_t* p = rgba + (size_t((by * 4 + y) * 256 + bx * 4 + x)) * 4;
           uint8_t* q = blk + (y * 4 + x) * 3;
-          if (p[3]) { q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; any = true; }
+          opaque[y * 4 + x] = p[3] != 0;
+          if (p[3]) { q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; ++n; }
           else { q[0] = q[1] = q[2] = 0; }
         }
-      if (!any) memset(o, 0, 8); else EncodeBlock(blk, o);
+      if (n == 16) EncodeBlock(blk, o);
+      else if (n == 0) { memset(o, 0, 4); memset(o + 4, 0xFF, 4); }   // c0 = c1 = 0, every index 3: all see-through
+      else EncodeBlockPunch(blk, opaque, o);
       o += 8;
     }
 }

@@ -52,7 +52,7 @@ The program also has a step-by-step guide built in (**How to use**, top right). 
 | Your file | Becomes |
 |---|---|
 | **Vector MBTiles** (`.mbtiles` with contour lines and/or depth areas), for example made with QGIS, GDAL or tippecanoe, or downloaded survey data | A coloured depth chart: `Large.at5` (detail) + `Medium.at5` (zoomed-out overview) |
-| **Depth GeoTIFF** (`.tif` of depths or heights, for example from BathyPicker or a survey download) | A coloured, shaded depth picture for the imagery layer, plus contour lines as a depth chart if you tick the box |
+| **Depth GeoTIFF** (`.tif` of depths or heights, for example from BathyPicker or a survey download) | A coloured, shaded depth picture for the imagery layer, plus contour lines as a depth chart, or either one on its own (**Make**) |
 | **Picture MBTiles** (jpg/png tiles), **GeoTIFF** (`.tif`), or **JPG/PNG with a world file** (`.jgw` / `.pgw`) | The plotter's imagery layer: `_3DTexture_16.at5`, `_3DTexture_32.at5` … |
 
 Contour values can be depths (5, 10, 15) or heights (−5, −10, −15). It works out which on its own.
@@ -68,8 +68,8 @@ anywhere in Australian waters) or downloaded from a survey portal. It is recogni
 
 | | |
 |---|---|
-| **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the **depth range** the colours are spread over, and how strong the **hillshade** is (Off to 50x, on the same scale as the SeaBathy apps). A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
-| **Contour lines** close together in the shallows (2, 5, 10, 15, 20 …), every metre if you type 1, or at depths you list. Zoomed out, the plotter shows the lines every 5 m; the ones in between appear as you zoom in. The water between the lines gets a colour step at every line (Navionics style), or the paper-chart bands. They're drawn into the picture, so they show with the photo overlay on, and also come as a depth chart with labels and coloured water for when it's off. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
+| **A coloured, shaded depth picture.** Pick the colours (Spectrum, Lagoon, Thermal, Chart blues or Grey), the depths the colours are spread over (**Colour depths**), and how strong the **hillshade** is (Off to 50x, on the same scale as the SeaBathy apps). A small range such as 0–30 m shows the reefs in fine detail; 0–2000 m shows the whole drop-off. The plotter shows it as its imagery / shaded-relief layer. | <img src="docs/images/11-depth-survey-picture.png" width="360" alt="A reef survey coloured by depth with hillshade"> |
+| **Contour lines** every metre in the shallows (the default), at another spacing you pick, or at depths you list. Zoomed out, the plotter shows the lines every 5 m; the ones in between appear as you zoom in. The water between the lines gets a colour step at every line (Navionics style), or the paper-chart bands. They're drawn into the picture, so they show with the photo overlay on, and also come as a depth chart with labels and coloured water for when it's off. | <img src="docs/images/12-depth-survey-contours.png" width="360" alt="Contour lines made from the same survey"> |
 
 The picture is made one step sharper than the survey itself, so zooming in on the plotter stays smooth; **Detail** sets it finer still (for example 1 m), with bigger files.
 

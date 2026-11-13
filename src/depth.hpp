@@ -23,6 +23,7 @@ struct Options {
   int elevation = -1;                   // -1 auto, 1 values are heights (depth = -value), 0 values are depths
   int crs = 0;                          // force an EPSG code (0 = from the GeoTIFF)
   std::vector<double> pictureContours;  // contour depths drawn into the picture itself (empty = none)
+  bool clipToRange = false;             // water outside rangeMin..rangeMax (when set) is left out of the picture
 };
 
 struct Grid;   // the loaded depth grid (depths in metres, positive down)
@@ -44,7 +45,9 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec, double
 // Writes contour lines at the given depths as vector MBTiles (layer "contours", attribute "depth" in metres).
 // Returns the number of lines written.
 // dryTo > 0: water shallower than this is a drying area (green on the plotter), as it dries at low tide.
-size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& mbtiles, double dryTo = 0);
+// keepLo/keepHi (keepHi > keepLo): only the water between these depths gets depth areas; the rest is left out.
+size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& mbtiles, double dryTo = 0,
+                     double keepLo = 0, double keepHi = -1);
 
 // The automatic colour range, for messages: 0 .. a round depth just below the deepest 2 % of the data.
 double AutoRangeMax(const Grid& g);

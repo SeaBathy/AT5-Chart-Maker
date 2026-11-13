@@ -39,13 +39,17 @@ constexpr int64_t kChild = 6000;              // child cell (metres)
 constexpr int64_t kRootCell = kChild * 4;     // 24 km root cell (4x4 child grid)
 constexpr int64_t kBlock = kRootCell * 20;    // 480 km block (20x20 root grid)
 // Generated style library layout (see BuildLargeLib): 0 Land, 1 SubBlk, 2..2+n-1 depth bands,
-// 2+n contour (detail), 3+n contour (all zooms), 4+n / 5+n contour label points.  Medium: 0 Land, 1..n bands.
+// 2+n contour (detail), 3+n contour (all zooms), 4+n / 5+n contour label points, [6+n / 7+n safety contour and
+// its labels], then the zoomed-out depth bands when there are any.  Medium: 0 Land, 1..n bands.
 enum { kSubBlk = 1 };
-enum Role { kRoleLand = 0, kRoleBand = 1000, kRoleContourMinor = 2000, kRoleContourMajor = 2001, kRoleContourSafety = 2002 };
-int TypeForRole(int role, int nBands, bool medium) {
+// kRoleBandOut: a depth survey's bands at the zoomed-out contours only (every 5 m), shown until the finer contours
+// appear; the ordinary bands (every contour) take over with them, so colours never step where no line is drawn.
+enum Role { kRoleLand = 0, kRoleBand = 1000, kRoleBandOut = 1500, kRoleContourMinor = 2000, kRoleContourMajor = 2001, kRoleContourSafety = 2002 };
+int TypeForRole(int role, int nBands, bool medium, bool safety = false) {
   if (role == kRoleLand) return 0;
   if (role >= kRoleBand && role < kRoleBand + nBands) return (medium ? 1 : 2) + (role - kRoleBand);
   if (medium) return -1;
+  if (role >= kRoleBandOut && role < kRoleBandOut + nBands) return 6 + nBands + (safety ? 2 : 0) + (role - kRoleBandOut);
   if (role == kRoleContourMinor) return 2 + nBands;
   if (role == kRoleContourMajor) return 3 + nBands;
   if (role == kRoleContourSafety) return 6 + nBands;   // after the two label-point styles (4+n, 5+n)
@@ -339,6 +343,247 @@ void DropCrossingRings(std::vector<std::vector<Pt>>& parts) {
   std::vector<std::vector<Pt>> kept;
   for (size_t i = 0; i < parts.size(); ++i) if (!drop[i]) kept.push_back(std::move(parts[i]));
   parts.swap(kept);
+}
+
+// A hole that was cut by a tile edge lies along the outer ring's side on that edge: it is really a notch in the
+// outer ring, so it is spliced in as one. (Left as a hole, the two rings run over each other along the edge.)
+// Rings are closed (last = first). Repeated until nothing changes.
+void MergeEdgeHoles(std::vector<std::vector<Pt>>& parts) {
+  if (parts.size() < 2) return;
+  auto area2 = [](const std::vector<Pt>& r) {
+    long double a = 0;
+    for (size_t i = 0; i + 1 < r.size(); ++i) a += (long double)r[i].x * r[i + 1].y - (long double)r[i + 1].x * r[i].y;
+    return a;
+  };
+  auto same = [](const Pt& p, const Pt& q) { return p.x == q.x && p.y == q.y; };
+  std::vector<int> sign(parts.size());
+  long double biggest = -1; int outer = 1;
+  for (size_t r = 0; r < parts.size(); ++r) {
+    const long double a = area2(parts[r]);
+    sign[r] = a > 0 ? 1 : -1;
+    if (std::fabs(a) > biggest) { biggest = std::fabs(a); outer = sign[r]; }
+  }
+  // Tile edges run straight across or up and down, so only such sides are indexed, by the line they lie on.
+  struct Entry { uint32_t ring, side, version; };
+  std::unordered_map<int64_t, std::vector<Entry>> vert, horz;
+  std::vector<uint32_t> version(parts.size(), 0);
+  std::vector<char> gone(parts.size(), 0);
+  auto index = [&](uint32_t o) {
+    const auto& O = parts[o];
+    for (uint32_t k = 0; k + 1 < O.size(); ++k) {
+      const Pt& u = O[k]; const Pt& w = O[k + 1];
+      if (u.x == w.x && u.y != w.y) vert[u.x].push_back({o, k, version[o]});
+      else if (u.y == w.y && u.x != w.x) horz[u.y].push_back({o, k, version[o]});
+    }
+  };
+  bool any = false;
+  for (uint32_t r = 0; r < parts.size(); ++r) if (sign[r] == outer) index(r); else any = true;
+  if (!any) return;
+  bool merged = false;
+  for (uint32_t h = 0; h < parts.size(); ++h) {
+    if (sign[h] == outer) continue;   // holes only
+    const auto& H = parts[h];
+    bool done = false;
+    for (size_t j = 0; j + 1 < H.size() && !done; ++j) {
+      const Pt& p = H[j]; const Pt& q = H[j + 1];
+      const bool isV = p.x == q.x && p.y != q.y, isH = p.y == q.y && p.x != q.x;
+      if (!isV && !isH) continue;
+      auto& m = isV ? vert : horz;
+      auto it = m.find(isV ? p.x : p.y);
+      if (it == m.end()) continue;
+      for (size_t e = 0; e < it->second.size() && !done; ++e) {
+        const Entry en = it->second[e];
+        if (gone[en.ring] || en.version != version[en.ring]) continue;
+        const auto& O = parts[en.ring];
+        const Pt& u = O[en.side]; const Pt& w = O[en.side + 1];
+        // the hole's side inside the outer's, running the other way
+        const bool inside = isV ? (std::min(p.y, q.y) >= std::min(u.y, w.y) && std::max(p.y, q.y) <= std::max(u.y, w.y))
+                                : (std::min(p.x, q.x) >= std::min(u.x, w.x) && std::max(p.x, q.x) <= std::max(u.x, w.x));
+        if (!inside || (w.x - u.x) * (q.x - p.x) + (w.y - u.y) * (q.y - p.y) >= 0) continue;
+        // new outer: ... u, then the hole from q round to p, then w ...
+        const size_t n = H.size() - 1, k = en.side;
+        std::vector<Pt> out(O.begin(), O.begin() + long(k) + 1);
+        auto push = [&](const Pt& x) { if (out.empty() || !same(out.back(), x)) out.push_back(x); };
+        for (size_t t = 0; t < n; ++t) push(H[(j + 1 + t) % n]);   // q ... p
+        for (size_t t = k + 1; t < O.size(); ++t) push(O[t]);
+        // only when the result is one clean loop (a notch made of corner-touching steps is left as it was)
+        std::unordered_set<uint64_t> seen;
+        bool repeat = out.size() < 4 || !same(out.front(), out.back());
+        for (size_t t = 0; t + 1 < out.size() && !repeat; ++t)
+          repeat = !seen.insert((uint64_t(uint32_t(int32_t(out[t].x))) << 32) | uint32_t(int32_t(out[t].y))).second;
+        if (repeat) continue;
+        parts[en.ring].swap(out);
+        ++version[en.ring];
+        index(en.ring);
+        gone[h] = 1;
+        done = merged = true;
+      }
+    }
+  }
+  if (!merged) return;
+  std::vector<std::vector<Pt>> kept;
+  for (size_t r = 0; r < parts.size(); ++r) if (!gone[r]) kept.push_back(std::move(parts[r]));
+  parts.swap(kept);
+}
+
+// Rings of one area that meet at a single point (two thin bands rounded onto the same unit, or the loops a ring
+// was split into) are allowed, but plotters' fills can miss a triangle there, and each miss shows as a dot of
+// the map underneath. So where rings meet, every ring but one is moved off the point by one unit: a hole shrinks,
+// an outer part grows (into its neighbour, which it covers by a unit, unseen). Run DropCrossingRings after.
+void SeparateTouches(std::vector<std::vector<Pt>>& parts, int kReach) {
+  if (parts.size() < 2) return;
+  auto key = [](int64_t x, int64_t y) { return (uint64_t(uint32_t(int32_t(x))) << 32) | uint32_t(int32_t(y)); };
+  auto area2 = [](const std::vector<Pt>& r) {   // closed ring (last = first)
+    long double a = 0;
+    for (size_t i = 0; i + 1 < r.size(); ++i) a += (long double)r[i].x * r[i + 1].y - (long double)r[i + 1].x * r[i].y;
+    return a;
+  };
+  std::vector<int> sign(parts.size());
+  long double biggest = -1; int outer = 1;   // the outer ring's way round: the biggest ring's (the first loop can
+  for (size_t r = 0; r < parts.size(); ++r) { // be a small back-turned piece the outer ring was split into)
+    const long double a = area2(parts[r]);
+    sign[r] = a > 0 ? 1 : -1;
+    if (std::fabs(a) > biggest) { biggest = std::fabs(a); outer = sign[r]; }
+  }
+  // every point in use, and the ring that keeps it (the first to use it)
+  std::unordered_map<uint64_t, uint32_t> owner;
+  std::vector<std::pair<uint32_t, uint32_t>> movers;   // ring, vertex
+  for (uint32_t r = 0; r < parts.size(); ++r)
+    for (uint32_t i = 0; i + 1 < parts[r].size(); ++i) {
+      auto [it, fresh] = owner.emplace(key(parts[r][i].x, parts[r][i].y), r);
+      if (!fresh && it->second != r) movers.push_back({r, i});
+    }
+  // a point on another ring's side (not at its corner): bucket the sides on a grid, as in DropCrossingRings
+  struct Seg { Pt a, b; uint32_t ring; bool dead; };
+  std::vector<Seg> segs;
+  std::vector<std::vector<uint32_t>> grid, sideSeg(parts.size());   // sideSeg[r][i]: ring r's side from corner i
+  int64_t x0 = INT64_MAX, y0 = INT64_MAX, x1 = INT64_MIN, y1 = INT64_MIN;
+  int G = 1; double cell = 1;
+  {
+    for (uint32_t r = 0; r < parts.size(); ++r)
+      for (size_t i = 0; i + 1 < parts[r].size(); ++i) {
+        const Pt& a = parts[r][i]; const Pt& b = parts[r][i + 1];
+        sideSeg[r].push_back(uint32_t(segs.size()));
+        segs.push_back({a, b, r, false});
+        x0 = std::min({x0, a.x, b.x}); x1 = std::max({x1, a.x, b.x}); y0 = std::min({y0, a.y, b.y}); y1 = std::max({y1, a.y, b.y});
+      }
+    const double span = double(std::max<int64_t>({x1 - x0, y1 - y0, 1}));
+    G = int(std::clamp(std::sqrt(double(segs.size()) / 4.0), 1.0, 512.0));
+    cell = span / G + 1e-9;
+    grid.assign(size_t(G) * size_t(G), {});
+    for (uint32_t i = 0; i < segs.size(); ++i) {
+      const Seg& s = segs[i];
+      const int cx0 = int(double(std::min(s.a.x, s.b.x) - x0) / cell), cx1 = int(double(std::max(s.a.x, s.b.x) - x0) / cell);
+      const int cy0 = int(double(std::min(s.a.y, s.b.y) - y0) / cell), cy1 = int(double(std::max(s.a.y, s.b.y) - y0) / cell);
+      for (int cy = std::max(0, cy0); cy <= std::min(G - 1, cy1); ++cy)
+        for (int cx = std::max(0, cx0); cx <= std::min(G - 1, cx1); ++cx) grid[size_t(cy) * G + cx].push_back(i);
+    }
+    for (uint32_t r = 0; r < parts.size(); ++r)
+      for (uint32_t i = 0; i + 1 < parts[r].size(); ++i) {
+        const Pt& p = parts[r][i];
+        const int cx = std::clamp(int(double(p.x - x0) / cell), 0, G - 1), cy = std::clamp(int(double(p.y - y0) / cell), 0, G - 1);
+        for (uint32_t si : grid[size_t(cy) * G + cx]) {
+          const Seg& s = segs[si];
+          if (s.ring == r) continue;
+          if ((p.x == s.a.x && p.y == s.a.y) || (p.x == s.b.x && p.y == s.b.y)) continue;   // a shared corner: above
+          if ((s.b.x - s.a.x) * (p.y - s.a.y) - (s.b.y - s.a.y) * (p.x - s.a.x) != 0) continue;
+          if (p.x < std::min(s.a.x, s.b.x) || p.x > std::max(s.a.x, s.b.x) || p.y < std::min(s.a.y, s.b.y) || p.y > std::max(s.a.y, s.b.y)) continue;
+          movers.push_back({r, i});
+          break;
+        }
+      }
+  }
+  if (movers.empty()) return;
+  std::sort(movers.begin(), movers.end());
+  movers.erase(std::unique(movers.begin(), movers.end()), movers.end());
+  // steps to try, nearest first: one unit usually does; a thin corner on a tile edge can need a few
+  std::vector<std::array<int, 2>> steps;
+  for (int dy = -kReach; dy <= kReach; ++dy)
+    for (int dx = -kReach; dx <= kReach; ++dx) if (dx || dy) steps.push_back({dx, dy});
+  std::stable_sort(steps.begin(), steps.end(), [](const auto& u, const auto& w) { return u[0] * u[0] + u[1] * u[1] < w[0] * w[0] + w[1] * w[1]; });
+  auto orient = [](const Pt& p, const Pt& q, const Pt& r) {
+    const int64_t v = (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    return (v > 0) - (v < 0);
+  };
+  auto same = [](const Pt& p, const Pt& q) { return p.x == q.x && p.y == q.y; };
+  auto onSeg = [&](const Pt& p, const Pt& a, const Pt& b) {   // p on a-b (ends included)
+    return orient(a, b, p) == 0 && p.x >= std::min(a.x, b.x) && p.x <= std::max(a.x, b.x) && p.y >= std::min(a.y, b.y) && p.y <= std::max(a.y, b.y);
+  };
+  // would moving ring r's corner v (between a and b) to p cross or touch another side?
+  auto clear = [&](uint32_t r, const Pt& a, const Pt& v, const Pt& b, const Pt& p) {
+    const int64_t lx = std::min({a.x, b.x, p.x}), hx = std::max({a.x, b.x, p.x});
+    const int64_t ly = std::min({a.y, b.y, p.y}), hy = std::max({a.y, b.y, p.y});
+    const int cx0 = std::clamp(int(double(lx - x0) / cell), 0, G - 1), cx1 = std::clamp(int(double(hx - x0) / cell), 0, G - 1);
+    const int cy0 = std::clamp(int(double(ly - y0) / cell), 0, G - 1), cy1 = std::clamp(int(double(hy - y0) / cell), 0, G - 1);
+    for (int cy = cy0; cy <= cy1; ++cy)
+      for (int cx = cx0; cx <= cx1; ++cx)
+        for (uint32_t si : grid[size_t(cy) * G + cx]) {
+          const Seg& t = segs[si];
+          if (t.dead) continue;
+          // this ring's own sides at v are being replaced
+          if (t.ring == r && ((same(t.a, a) && same(t.b, v)) || (same(t.a, v) && same(t.b, b)))) continue;
+          if (onSeg(p, t.a, t.b)) return false;   // p would sit on a side
+          for (const Pt* e : {&a, &b}) {
+            const Pt& q = *e;   // new side q-p
+            const bool sharesEnd = same(t.a, q) || same(t.b, q);
+            if (!sharesEnd && (onSeg(t.a, q, p) || onSeg(t.b, q, p))) return false;
+            if (orient(q, p, t.a) * orient(q, p, t.b) < 0 && orient(t.a, t.b, q) * orient(t.a, t.b, p) < 0) return false;
+          }
+        }
+    return true;
+  };
+  for (auto [r, i] : movers) {
+    auto& ring = parts[r];
+    const size_t n = ring.size() - 1;   // without the closing point
+    const Pt v = ring[i], a = ring[(i + n - 1) % n], b = ring[(i + 1) % n];
+    const int s = sign[r];
+    // A hole may only shrink (its new loop inside the old one) and an outer part only grow (its new loop around
+    // the old one), so no spot it covered is ever lost. Moving v to p swaps the triangle a-v-b for a-p-b:
+    // at a corner that turns inward (convex) a loop shrinks when p is in a-v-b and grows when v is in a-p-b;
+    // at a notch (reflex) it is the other way round.
+    const bool shrink = s != outer;
+    const int64_t turn = ((v.x - a.x) * (b.y - v.y) - (v.y - a.y) * (b.x - v.x)) * s;
+    auto inTri = [&](const Pt& q, const Pt& t0, const Pt& t1, const Pt& t2) {   // closed triangle
+      const int o0 = orient(t0, t1, q), o1 = orient(t1, t2, q), o2 = orient(t2, t0, q);
+      return !((o0 < 0 || o1 < 0 || o2 < 0) && (o0 > 0 || o1 > 0 || o2 > 0));
+    };
+    // the nearest step that keeps the cover; among equally near ones, the one furthest from both old sides
+    double best = -1e300; int bd = -1, bestD2 = 0;
+    for (int d = 0; d < int(steps.size()); ++d) {
+      const int d2 = steps[size_t(d)][0] * steps[size_t(d)][0] + steps[size_t(d)][1] * steps[size_t(d)][1];
+      if (bd >= 0 && d2 > bestD2) break;
+      const Pt p{v.x + steps[size_t(d)][0], v.y + steps[size_t(d)][1]};
+      if ((p.x == a.x && p.y == a.y) || (p.x == b.x && p.y == b.y)) continue;
+      if (orient(a, p, b) == 0) continue;   // the corner would flatten away
+      const int64_t l1 = ((v.x - a.x) * (p.y - a.y) - (v.y - a.y) * (p.x - a.x)) * s;   // > 0: inside of a->v
+      const int64_t l2 = ((b.x - v.x) * (p.y - v.y) - (b.y - v.y) * (p.x - v.x)) * s;
+      bool ok;
+      if (turn > 0) ok = shrink ? inTri(p, a, v, b) : inTri(v, a, p, b);
+      else if (turn < 0) ok = shrink ? inTri(v, a, p, b) : inTri(p, a, v, b);
+      else ok = shrink ? (l1 > 0) : (l1 < 0);   // v on a straight side: just to the right side of it
+      if (!ok) continue;
+      if (owner.count(key(p.x, p.y))) continue;
+      if (!clear(r, a, v, b, p)) continue;
+      const double score = double(std::min(std::llabs(l1), std::llabs(l2)));
+      if (score > best) { best = score; bd = d; bestD2 = d2; }
+    }
+    if (bd < 0) continue;   // boxed in: leave it (DropCrossingRings still guards the fill)
+    const Pt p{v.x + steps[size_t(bd)][0], v.y + steps[size_t(bd)][1]};
+    ring[i] = p;
+    if (i == 0) ring[n] = p;
+    owner.emplace(key(p.x, p.y), r);
+    segs[sideSeg[r][(i + n - 1) % n]].dead = true;   // the two old sides go, the two new ones come in
+    segs[sideSeg[r][i]].dead = true;
+    for (int e = 0; e < 2; ++e) {
+      const Seg sg = e == 0 ? Seg{a, p, r, false} : Seg{p, b, r, false};
+      sideSeg[r][e == 0 ? (i + n - 1) % n : i] = uint32_t(segs.size());
+      segs.push_back(sg);
+      const int cx0 = std::clamp(int(double(std::min(sg.a.x, sg.b.x) - x0) / cell), 0, G - 1), cx1 = std::clamp(int(double(std::max(sg.a.x, sg.b.x) - x0) / cell), 0, G - 1);
+      const int cy0 = std::clamp(int(double(std::min(sg.a.y, sg.b.y) - y0) / cell), 0, G - 1), cy1 = std::clamp(int(double(std::max(sg.a.y, sg.b.y) - y0) / cell), 0, G - 1);
+      for (int cy = cy0; cy <= cy1; ++cy)
+        for (int cx = cx0; cx <= cx1; ++cx) grid[size_t(cy) * G + cx].push_back(uint32_t(segs.size() - 1));
+    }
+  }
 }
 
 // ------------------------------------------------------------------ source
@@ -761,6 +1006,12 @@ struct Classifier {
       if (!Attr(L, F, depthKeys, d)) return -1;
       int band = 0;
       for (size_t i = 0; i < bands.size(); ++i) if (d >= bands[i].first) band = int(i);
+      if (o.zoomedOutAreas) {
+        const bool out = L.name == "depare_out";
+        if (out && o.fineContourZoom >= at5::styles::kAllScales) return -1;   // finer contours always shown
+        if (!out && L.name == "depare" && o.fineContourZoom < 0) return -1;     // finer contours never shown
+        if (out) return kRoleBandOut + band;
+      }
       return kRoleBand + band;
     }
     if (F.type == 2) {
@@ -796,8 +1047,8 @@ struct Layout {
   int64_t Leaf() const { return Nested() ? child : rootCell; }
   int Per() const { return Nested() ? int(rootCell / child) : 1; }
 };
-const Layout kLargeLayout{480000, 24000, 6000, 1, 3, 23, 23, {22851, 22851, 0, 0}, {{100, 1}, {200, 1}}, false};
-const Layout kMediumLayout{4800000, 240000, 0, 80, 2, 20, 20, {457022, 457022, 22851, 22851}, {{100, 1}}, true};
+const Layout kLargeLayout{480000, 24000, 6000, 1, 3, 23, 23, {at5::styles::kAllScales, at5::styles::kAllScales, 0, 0}, {{100, 1}, {200, 1}}, false};
+const Layout kMediumLayout{4800000, 240000, 0, 80, 2, 20, 20, {at5::styles::kOverviewScales, at5::styles::kOverviewScales, at5::styles::kAllScales, at5::styles::kAllScales}, {{100, 1}}, true};
 
 struct CellData { std::map<int, std::vector<uint8_t>> byType; };  // type index -> encoded features
 struct BlockBuild {
@@ -834,6 +1085,23 @@ void AddFeature(const Layout& Lo, BlockBuild& B, int type, const std::string& na
           if (loops.empty()) { if (i == 0) break; continue; }
           for (auto& q : loops) parts.push_back(std::move(q));
         }
+        DropCrossingRings(parts);
+        MergeEdgeHoles(parts);
+        {   // a spliced ring can come back to a point it passed: split it into simple loops again
+          std::vector<std::vector<Pt>> split;
+          for (auto& q : parts) {
+            std::set<std::pair<int64_t, int64_t>> seen;
+            bool repeat = false;
+            for (size_t k = 0; k + 1 < q.size() && !repeat; ++k) repeat = !seen.insert({q[k].x, q[k].y}).second;
+            if (!repeat) { split.push_back(std::move(q)); continue; }
+            Ring r;
+            for (auto& x : q) r.push_back({double(x.x), double(x.y)});
+            for (auto& l : QuantizeArea(r)) split.push_back(std::move(l));
+          }
+          parts.swap(split);
+        }
+        // up to 2 m in the detail chart; one unit (80 m) in the overview, where more would show as spikes
+        SeparateTouches(parts, Lo.scale <= 1 ? 2 : 1);
         DropCrossingRings(parts);
       } else {
         for (auto& r : rings) for (auto& seg : ClipLine(r, x0, y0, x1, y1)) { auto q = Quantize(toUnits(seg), false); if (!q.empty()) parts.push_back(std::move(q)); }
@@ -987,13 +1255,32 @@ std::vector<LibGroup> BandEntries(const LibGroup& area, const std::vector<std::p
   }
   return out;
 }
+// A style's scale range (shown between coarsest and finest; 0 = zoomed right in). It is stored twice: in the header
+// (after the kind's id and two names) and again for the drawing part, after a 15.
+std::vector<uint8_t> WithScales(std::vector<uint8_t> d, int32_t coarsest, int32_t finest) {
+  size_t p = 2;
+  p += 1 + d.at(p);
+  p += 1 + d.at(p);
+  auto get = [&](size_t i) { return int32_t(uint32_t(d.at(i)) | uint32_t(d.at(i + 1)) << 8 | uint32_t(d.at(i + 2)) << 16 | uint32_t(d.at(i + 3)) << 24); };
+  auto put = [&](size_t i, int32_t v) { for (int k = 0; k < 4; ++k) d.at(i + size_t(k)) = uint8_t(uint32_t(v) >> (8 * k)); };
+  const int32_t c0 = get(p), f0 = get(p + 4);
+  put(p, coarsest); put(p + 4, finest);
+  for (size_t i = p + 8; i + 12 <= d.size(); ++i)
+    if (get(i) == 15 && get(i + 4) == c0 && get(i + 8) == f0) { put(i + 4, coarsest); put(i + 8, finest); return d; }
+  throw std::runtime_error("style scale fields not found");
+}
 std::pair<std::vector<uint8_t>, uint32_t> BuildLargeLib(const std::vector<std::pair<double, uint32_t>>& bands, uint32_t land, uint32_t contour, uint32_t minorContour, int fineZoom,
-                                                        uint32_t safetyColour, bool safety) {
+                                                        uint32_t safetyColour, bool safety, bool outAreas) {
   const auto S = at5::DetailChartStyles();
   const LibGroup land0 = Group(S.land), area = Group(S.depthArea), fine = Group(S.contourFine), all = Group(S.contourAll);
   const LibGroup fineLbl = Group(S.labelFine), allLbl = Group(S.labelAll);
   std::vector<LibGroup> e{{land0.name, AreaEntry(land0.data, 20, land)}, Group(S.subBlock)};
-  for (auto& b : BandEntries(area, bands)) e.push_back(b);
+  // with zoomed-out bands: the ordinary (every contour) bands show only once the finer contours do
+  const bool split = outAreas && fineZoom > 0 && fineZoom < at5::styles::kAllScales;
+  for (auto& b : BandEntries(area, bands)) {
+    if (split) b.data = WithScales(b.data, fineZoom, 0);
+    e.push_back(b);
+  }
   const uint32_t n = uint32_t(bands.size());
   e.push_back({fine.name, WithMinZoom(ContourEntry(fine.data, 4 + n, minorContour), 3808, fineZoom)});
   e.push_back({all.name, ContourEntry(all.data, 5 + n, contour)});
@@ -1004,6 +1291,12 @@ std::pair<std::vector<uint8_t>, uint32_t> BuildLargeLib(const std::vector<std::p
     safe.name[1] = 'B'; safeLbl.name[1] = 'B';
     e.push_back(safe); e.push_back(safeLbl);
   }
+  if (outAreas)   // the zoomed-out bands: shown until the finer contours appear (always, when those never do)
+    for (auto& b : BandEntries(area, bands)) {
+      b.name[1] = '8';   // their own group ids
+      b.data = WithScales(b.data, at5::styles::kAllScales, split ? fineZoom : 0);
+      e.push_back(b);
+    }
   return AssembleLib(e);
 }
 std::pair<std::vector<uint8_t>, uint32_t> BuildMediumLib(const std::vector<std::pair<double, uint32_t>>& bands, uint32_t land) {
@@ -2027,7 +2320,7 @@ PassResult RunPass(const Source& src, int z, const Layout& Lo, const Classifier&
               int role = cls.Classify(L, F, name);
               if (role < 0) continue;
               if (synth && role >= kRoleBand && role < kRoleContourMinor) continue;  // areas rebuilt from contours
-              int type = TypeForRole(role, int(cls.bands.size()), Lo.overview);
+              int type = TypeForRole(role, int(cls.bands.size()), Lo.overview, cls.o.safetyDepth > 0);
               if (type < 0) continue;
               auto rings = DecodeGeom(F.geom);
               for (auto& r : rings) for (auto& p : r) { p.first = aX0 + p.first * sc; p.second = aY1 - p.second * sc; }
@@ -2219,6 +2512,7 @@ int Convert(const std::string& input, const std::string& outDir, const Options& 
             continue;
           }
           const int role = probe.Classify(L, F, nm);
+          if (L.name == "depare_out") oo.zoomedOutAreas = true;
           if (role == kRoleLand) ++nLand;
           if (role >= kRoleBand && role < kRoleContourMinor && probe.Attr(L, F, probe.depthKeys, v) && av.size() < 5000) av.insert(v);
         }
@@ -2305,7 +2599,7 @@ int Convert(const std::string& input, const std::string& outDir, const Options& 
     PassResult large = RunPass(src, z, kLargeLayout, cls, synth, threads, store, sm);
     if (large.blocks.empty()) throw std::runtime_error("no features matched (use --list to see layers/attributes)");
     fflush(store);
-    auto lib = BuildLargeLib(cls.bands, o.landColour, o.contourColour, o.minorContourColour == 0xFFFFFFFF ? o.contourColour : o.minorContourColour, o.fineContourZoom, o.safetyColour, o.safetyDepth > 0);
+    auto lib = BuildLargeLib(cls.bands, o.landColour, o.contourColour, o.minorContourColour == 0xFFFFFFFF ? o.contourColour : o.minorContourColour, o.fineContourZoom, o.safetyColour, o.safetyDepth > 0, oo.zoomedOutAreas);
     total += WritePass(large, outDir, o.name, o.splitMb, lib.first, lib.second, store, wo);
     if (o.overview) {
       const int zLow = synth ? std::max(0, src.minZoom - 4) : src.minZoom;   // finer tiles are merged (FinerTiles)
@@ -2518,11 +2812,16 @@ int CheckAreas(const std::string& path) {
   long long areas = 0, rings = 0, pinch = 0, cross = 0, touch = 0, point = 0;
   Walker w{r, c};
   long long lineFeats = 0, lineVerts = 0, areaVerts = 0;
-  std::map<int, long long> linesByType;
+  std::map<int, long long> linesByType, tinyByType;
   w.emit = [&](int type, const std::vector<std::vector<P>>& rgs, bool poly) {
     if (!poly) { ++lineFeats; ++linesByType[type]; for (auto& rg : rgs) lineVerts += (long long)rg.size(); return; }
     for (auto& rg : rgs) areaVerts += (long long)rg.size();
     ++areas;
+    if (!rgs.empty()) {   // tiny areas (outer ring under 3 units across) by style: they show as dots on a plotter
+      int32_t x0 = INT32_MAX, y0 = INT32_MAX, x1 = INT32_MIN, y1 = INT32_MIN;
+      for (auto& p : rgs[0]) { x0 = std::min(x0, p.first); x1 = std::max(x1, p.first); y0 = std::min(y0, p.second); y1 = std::max(y1, p.second); }
+      if (x1 - x0 < 3 && y1 - y0 < 3) ++tinyByType[type];
+    }
     std::vector<std::vector<P>> rs;
     for (auto rg : rgs) { if (rg.size() > 1 && rg.front() == rg.back()) rg.pop_back(); if (rg.size() >= 3) rs.push_back(std::move(rg)); }
     for (size_t i = 0; i < rs.size(); ++i) {
@@ -2553,6 +2852,7 @@ int CheckAreas(const std::string& path) {
          path.c_str(), areas, rings, pinch, cross, point, touch);
   printf("  %lld area points, %lld lines with %lld points\n", areaVerts, lineFeats, lineVerts);
   for (auto& [t, n] : linesByType) printf("  line style %d: %lld lines\n", t, n);
+  for (auto& [t, n] : tinyByType) printf("  area style %d (%06X): %lld tiny areas\n", t, c.types[size_t(t)].hasRgb ? c.types[size_t(t)].rgb : 0u, n);
   return 1;
 }
 
@@ -2603,22 +2903,26 @@ int PreviewVector(const std::string& path, const std::string& png, int maxPx, bo
         px.push_back(std::move(q));
       }
       if (!poly) { if (drawLines) lines.push_back({type, std::move(px), false}); return; }
-      // even-odd scanline fill of this polygon (all rings)
+      // non-zero scanline fill of this polygon (all rings), the chart format's rule
       double minY = 1e300, maxY = -1e300;
       for (auto& q : px) for (auto& p : q) { minY = std::min(minY, p.second); maxY = std::max(maxY, p.second); }
       const uint32_t rgb = colourOf(type);
-      std::vector<double> xs;
+      std::vector<std::pair<double, int>> xs;   // crossing, winding step
       for (int y = std::max(0, int(minY)); y <= std::min(H - 1, int(maxY)); ++y) {
         const double sy = y + 0.5;
         xs.clear();
         for (auto& q : px)
           for (size_t i = 0; i + 1 < q.size(); ++i) {
             auto a = q[i], b = q[i + 1];
-            if ((a.second <= sy) != (b.second <= sy)) xs.push_back(a.first + (sy - a.second) / (b.second - a.second) * (b.first - a.first));
+            if ((a.second <= sy) != (b.second <= sy))
+              xs.push_back({a.first + (sy - a.second) / (b.second - a.second) * (b.first - a.first), b.second > a.second ? 1 : -1});
           }
         std::sort(xs.begin(), xs.end());
-        for (size_t i = 0; i + 1 < xs.size(); i += 2) {
-          for (int x = std::max(0, int(std::ceil(xs[i] - 0.5))); x <= std::min(W - 1, int(std::floor(xs[i + 1] - 0.5))); ++x) {
+        int wind = 0;
+        for (size_t i = 0; i + 1 < xs.size(); ++i) {
+          wind += xs[i].second;
+          if (wind == 0) continue;
+          for (int x = std::max(0, int(std::ceil(xs[i].first - 0.5))); x <= std::min(W - 1, int(std::floor(xs[i + 1].first - 0.5))); ++x) {
             uint8_t* d = &img[(size_t(y) * W + x) * 4];
             d[0] = uint8_t(rgb >> 16); d[1] = uint8_t(rgb >> 8); d[2] = uint8_t(rgb);
           }

@@ -751,6 +751,8 @@ bool DepthSampler::RenderTile(double mpp, int64_t tx, int64_t ty, uint8_t* rgba)
       const double cx = col * f - 0.5, cy = r * f - 0.5;
       if (!Valid(g.Sample(L, cx, cy))) { px[3] = 0; continue; }   // mostly missing here
       const float d = g.SampleCubic(L, cx, cy);
+      // "leave out other depths": water outside the chosen colour depths stays see-through
+      if (s.o_.clipToRange && s.o_.rangeMax > s.o_.rangeMin && d >= 0 && (d < s.o_.rangeMin || d > s.o_.rangeMax)) { px[3] = 0; continue; }
       uint8_t base[3];
       if (d < 0 && s.lo_ >= 0) {
         if (!s.o_.showAboveWater) { px[3] = 0; continue; }
@@ -947,6 +949,7 @@ struct TileArea { double d1, d2; std::vector<std::vector<std::pair<int32_t, int3
 struct TileLines {
   std::vector<std::pair<double, std::vector<std::pair<int32_t, int32_t>>>> lines;
   std::vector<TileArea> areas;
+  std::vector<TileArea> areasOut;   // the bands at the zoomed-out contours only (layer "depare_out")
 };
 
 // ---- depth areas straight from the grid
@@ -988,6 +991,7 @@ struct PId {
 };
 struct DEdge { PId from, to; };
 constexpr double kDetailTol = 0.05;   // see TriTrace
+constexpr double kMinLoopCells = 1.0;   // closed loops smaller than this (in cells) are dropped: survey-noise specks
 struct TriOut {
   std::vector<std::vector<RingP>> bandRings;   // per band (levels.size() + 1 of them)
   std::vector<std::vector<RingP>> levelLines;  // per level
@@ -1236,7 +1240,8 @@ void TriTrace(const std::vector<float>& s, int W, int H, const std::vector<doubl
 }
 
 // The depth bands of grid level L, in global tile units at zoom z: each exterior with the holes inside it.
-std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>& levels, double dryTo = 0) {
+std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>& levels, double dryTo = 0,
+                          double keepLo = 0, double keepHi = -1) {
   const int W = g.lw[size_t(L)], H = g.lh[size_t(L)];
   const auto s = Smoothed(g.levels[size_t(L)], W, H);
   std::vector<double> lv(levels.begin(), levels.end());
@@ -1248,10 +1253,16 @@ std::vector<Poly> AreasAt(const Grid& g, int L, int z, const std::vector<double>
   for (size_t b = 0; b < tri.bandRings.size(); ++b) {
     double d1 = b == 0 ? std::min(double(g.minDepth), lv.empty() ? 0.0 : lv.front() - 1) : lv[b - 1];
     double d2 = b < lv.size() ? lv[b] : std::max(double(g.maxDepth), d1 + 1);
+    // outside the kept depths: left out (from 0 m, the drying strip and anything above water stay)
+    if (keepHi > keepLo && (d1 >= keepHi - 1e-9 || (keepLo > 0 && d2 <= keepLo + 1e-9))) continue;
     if (d2 <= 0 || (dryTo > 0 && d2 <= dryTo + 1e-9)) d1 = -1;   // dries at low tide: the plotter's drying (green) colour
     struct R { RingP pts; double minx, miny, maxx, maxy, area; };
     std::vector<R> ext, hol;
     for (auto& r : tri.bandRings[b]) {
+      // Specks: a loop smaller than about one survey cell (survey noise on a flat bottom) is left to the water
+      // around it. Its outline is a hole in the neighbouring band with exactly the same points, so both go
+      // together and nothing is left uncovered. Thousands of them only make plotters' fills fail in dots.
+      if (std::fabs(Area2(r)) < 2 * kMinLoopCells) continue;
       R ri{r, 1e300, 1e300, -1e300, -1e300, Area2(r)};
       for (auto& p : r) { ri.minx = std::min(ri.minx, p.first); ri.maxx = std::max(ri.maxx, p.first); ri.miny = std::min(ri.miny, p.second); ri.maxy = std::max(ri.maxy, p.second); }
       (ri.area > 0 ? ext : hol).push_back(std::move(ri));
@@ -1306,6 +1317,8 @@ std::vector<Line> LinesAt(const Grid& g, int L, int z, const std::vector<double>
   std::vector<Line> out;
   for (size_t k = 0; k < lv.size(); ++k)
     for (auto& r : tri.levelLines[k]) {
+      // the same specks the areas leave out (see AreasAt), so lines and colours still match
+      if (r.size() > 2 && r.front() == r.back() && std::fabs(Area2(r)) < 2 * kMinLoopCells) continue;
       Line ln{lv[k], {}};
       ln.pts.reserve(r.size());
       for (auto& p : r) {
@@ -1394,7 +1407,7 @@ RingP ClipRing(const RingP& in, double x0, double y0, double x1, double y1) {
   return cur;
 }
 
-void AddAreasToTiles(const std::vector<Poly>& polys, std::map<std::pair<int64_t, int64_t>, TileLines>& tiles) {
+void AddAreasToTiles(const std::vector<Poly>& polys, std::map<std::pair<int64_t, int64_t>, TileLines>& tiles, bool out = false) {
   auto local = [](const RingP& r, int64_t tx, int64_t ty) {
     std::vector<std::pair<int32_t, int32_t>> q;
     for (auto& p : r) {
@@ -1422,7 +1435,7 @@ void AddAreasToTiles(const std::vector<Poly>& polys, std::map<std::pair<int64_t,
           auto hole = local(ClipRing(h, x0, y0, x1, y1), tx, ty);
           if (hole.size() >= 3 && area2(hole) < 0) ta.rings.push_back(std::move(hole));
         }
-        tiles[{tx, ty}].areas.push_back(std::move(ta));
+        (out ? tiles[{tx, ty}].areasOut : tiles[{tx, ty}].areas).push_back(std::move(ta));
       }
   }
 }
@@ -1467,7 +1480,7 @@ void CheckAreas(const std::map<std::pair<int64_t, int64_t>, TileLines>& tiles, i
          z, areas, rings, pinch, touch);
 }
 
-std::vector<uint8_t> EncodeAreas(const std::vector<TileArea>& areas) {
+std::vector<uint8_t> EncodeAreas(const std::vector<TileArea>& areas, bool out = false) {
   std::vector<double> vals;
   auto idx = [&](double v) {
     auto it = std::find(vals.begin(), vals.end(), v);
@@ -1477,7 +1490,8 @@ std::vector<uint8_t> EncodeAreas(const std::vector<TileArea>& areas) {
   };
   std::vector<uint8_t> layer;
   Key(layer, 15, 0); Varint(layer, 2);
-  Bytes(layer, 1, std::vector<uint8_t>{'d', 'e', 'p', 'a', 'r', 'e'});
+  const std::string nm = out ? "depare_out" : "depare";
+  Bytes(layer, 1, std::vector<uint8_t>(nm.begin(), nm.end()));
   for (auto& a : areas) {
     std::vector<uint8_t> feat, tags, geom;
     Varint(tags, 0); Varint(tags, idx(a.d1));
@@ -1547,6 +1561,7 @@ std::vector<uint8_t> EncodeTile(const TileLines& t) {
   std::vector<uint8_t> tile;
   if (!t.lines.empty()) Bytes(tile, 3, layer);
   if (!t.areas.empty()) Bytes(tile, 3, EncodeAreas(t.areas));
+  if (!t.areasOut.empty()) Bytes(tile, 3, EncodeAreas(t.areasOut, true));
   return tile;
 }
 
@@ -1579,15 +1594,9 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, doubl
   }
   double step;
   if (spec == "auto") {
-    // Close together in the shallows, wider apart in deep water (like a paper chart): every 1 m to 10 m for
-    // shallow surveys, then 2, 5, 10, 15, 20, 25, 30, 40, 50 ... 5000 m.
-    const double r = AutoRangeMax(g);
-    std::vector<double> nice = {2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 120, 150, 200, 250, 300, 400, 500,
-                                750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000};
-    if (r <= 30) { nice.clear(); for (int v = 1; v <= 30; ++v) nice.push_back(v); }
-    if (g.minDepth <= 0 && g.maxDepth > 0) out.push_back(0);
-    for (double v : nice) if (v >= lo && v <= hi) out.push_back(v);
-    return out;
+    // Every 1 m in the shallows, widening in deep water below (5 m past 50 m, 10 m past 200 m ...), like a paper
+    // chart. Zoomed out the plotter shows the 5 m lines; the 1 m ones come in as you zoom in.
+    step = 1;
   } else {
     size_t used = 0;
     try { step = std::stod(spec, &used); } catch (...) { used = 0; step = 0; }
@@ -1630,7 +1639,8 @@ std::vector<double> ContourLevels(const Grid& g, const std::string& spec0, doubl
   return out;
 }
 
-size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& path, double dryTo) {
+size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std::string& path, double dryTo,
+                     double keepLo, double keepHi) {
   // detail zoom: about sixteen tile units per cell, so rounding to tile units never brings neighbouring contours
   // (and the area edges on them) together on steep walls; overview at zoom 9 from a coarser grid level
   const double cosLat = std::cos(g.centreLat * kDeg);
@@ -1643,19 +1653,27 @@ size_t WriteContours(const Grid& g, const std::vector<double>& levels, const std
     lines = ls.size();
     AddToTiles(ls, zooms[zmax]);
     // the water between the lines, as depth areas worked out from the grid itself
-    AddAreasToTiles(AreasAt(g, 0, zmax, levels, dryTo), zooms[zmax]);
+    AddAreasToTiles(AreasAt(g, 0, zmax, levels, dryTo, keepLo, keepHi), zooms[zmax]);
+    // the same water in bands at the zoomed-out (every 5 m) contours only: the plotter shows these until the finer
+    // contours appear, so zoomed out every colour step still has its line (no lone specks of 1 m bands)
+    std::vector<double> major;
+    for (double v : levels) if (std::fabs(v / 5 - std::round(v / 5)) < 1e-6) major.push_back(v);
+    if (major.size() >= 2 && major.size() < levels.size())
+      AddAreasToTiles(AreasAt(g, 0, zmax, major, dryTo, keepLo, keepHi), zooms[zmax], true);
   }
   constexpr int kOverview = 9;
   if (zmax > kOverview) {
     const double unit9 = 2 * kPi * kA * cosLat / (4096.0 * 512);
     int L = 0;
-    while (L + 1 < int(g.levels.size()) && g.cellMetres * double(1 << L) < unit9 * 2) ++L;
+    // cells of at least two of the overview chart's 80 m units: finer outlines only round into staircases of
+    // squares meeting at their corners, which plotters fill badly (patches of the wrong colour zoomed out)
+    while (L + 1 < int(g.levels.size()) && g.cellMetres * double(1 << L) < std::max(unit9 * 2, 160.0)) ++L;
     // zoomed out, the lines every 5 m only: finer bands on a wall would be thinner than the overview's units
     std::vector<double> major;
     for (double v : levels) if (std::fabs(v / 5 - std::round(v / 5)) < 1e-6) major.push_back(v);
     const auto& ov = major.size() >= 2 ? major : levels;
     AddToTiles(LinesAt(g, L, kOverview, ov), zooms[kOverview]);
-    AddAreasToTiles(AreasAt(g, L, kOverview, ov, dryTo), zooms[kOverview]);
+    AddAreasToTiles(AreasAt(g, L, kOverview, ov, dryTo, keepLo, keepHi), zooms[kOverview]);
   }
   if (const char* chk = getenv("SAT2AT5_CHECK_AREAS"); chk && *chk == '1')
     for (auto& [z, tiles] : zooms) CheckAreas(tiles, z);

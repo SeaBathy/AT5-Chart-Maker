@@ -8,6 +8,7 @@
 namespace vec {
 
 struct Options {
+  bool zoomedOutAreas = false;         // set when the tiles have a "depare_out" layer (see depth.cpp): own band styles
   int zoom = -1;                      // MBTiles zoom to read (default max)
   std::string landLayers;             // comma list; empty = auto (land/lndare/coast/island)
   std::string depthLayers;            // comma list; empty = any polygon layer with a depth attribute
@@ -17,7 +18,7 @@ struct Options {
   bool elevation = false;             // attribute values are elevations (depth = -value)
   bool elevationAuto = true;          // detect elevation-style data (mostly negative values) automatically
   double majorContourEvery = 5;       // contours that are multiples of this show at every zoom of the detail chart
-  int fineContourZoom = 3808;         // zoom (x256) below which the other contours appear: 3808 IMC default, 22851 always, -1 never
+  int fineContourZoom = 3808;         // zoom (x256) below which the other contours appear: 3808 IMC default, 11425 always (styles::kAllScales), -1 never
   bool gradient = false;              // shade contour by contour (see deepDepth)
   int gradientRamp = 0;               // 0 soft blue, 1 Navionics chart palette
   double deepDepth = 20;              // gradient: white from this depth
