@@ -10,7 +10,7 @@ Works anywhere in the world. Free and offline.</p>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white">
   <img alt="Simrad, Lowrance, B&G" src="https://img.shields.io/badge/plotters-Simrad%20%7C%20Lowrance%20%7C%20B%26G-1f6feb">
   <img alt="Tested on Simrad" src="https://img.shields.io/badge/tested%20on-Simrad-success">
-  <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue">
+  <img alt="GPL-3.0 licence" src="https://img.shields.io/badge/licence-GPL--3.0-blue">
 </p>
 
 <p align="center"><img src="docs/images/14-depth-survey.png" width="820" alt="AT5 Chart Maker with a depth survey loaded: colours, colour depths, line depths and what to make"></p>
@@ -170,7 +170,7 @@ The code uses only what Windows already has: WIC for images, the built-in SQLite
 
 ## Credits and licences
 
-- **Code:** MIT licence ([LICENSE](LICENSE)).
+- **Code:** GNU GPL-3.0 ([LICENSE](LICENSE)): free to use, change and share; anyone who shares a copy or a changed version must keep it free and open source under the same licence.
 - **Example pictures** of reefs on the central Great Barrier Reef use IMAS bathymetry: Flukes, E. (2026), *Multi-resolution bathymetry composite surface for Australian waters*, IMAS, [doi:10.25959/Y9VF-V723](https://doi.org/10.25959/Y9VF-V723), CC BY 4.0.
 - **World coastline:** [GSHHG](https://www.soest.hawaii.edu/pwessel/gshhg/) 2.3.7, Wessel & Smith (University of Hawaii / NOAA), LGPL 3.
 - **Australian coastline:** [GEODATA COAST 100K 2004](https://pid.geoscience.gov.au/dataset/ga/61395), © Commonwealth of Australia (Geoscience Australia), CC BY 4.0.
